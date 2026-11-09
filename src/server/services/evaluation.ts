@@ -34,6 +34,7 @@ export function rowToListing(row: ListingRow): ListingForEvaluation {
     listedAt: row.listedAt,
     originAt: row.originAt,
     detailsFetched: !!row.detailsFetchedAt,
+    description: row.descriptionText ?? null,
     queryCategoryIds: row.queryCategoryIds ?? [],
   };
 }

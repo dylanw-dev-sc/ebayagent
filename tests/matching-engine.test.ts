@@ -25,7 +25,28 @@ describe("matching engine: states and explanations", () => {
       ctx,
     );
     expect(ev.state).toBe("review");
-    expect(ev.summary).toBe("Needs review: seller did not provide fabric composition.");
+    expect(ev.summary).toBe("Needs review: seller did not provide fabric composition (checked the title, item specifics and description).");
+  });
+
+  it("uses fabric stated in the seller's description", () => {
+    const ev = evaluateListing(
+      listing({
+        title: "Brunello Cucinelli crew neck tee grey",
+        brandAspect: "Brunello Cucinelli",
+        sizeAspect: "L",
+        ebayCategoryIds: [EBAY_CAT.tee],
+        description: "Lovely tee, barely worn.\nComposition: 100% cotton jersey.\nShips in a poly mailer.",
+      }),
+      ctx,
+    );
+    expect(ev.state).toBe("match");
+    expect(ev.facts.material.keys).toEqual(["cotton"]);
+    expect(ev.facts.materialReading.components[0].source).toBe("description");
+  });
+
+  it("says when item details haven't been fetched yet", () => {
+    const ev = evaluateListing(listing({ title: "Brunello Cucinelli tee size L", ebayCategoryIds: [EBAY_CAT.tee], detailsFetched: false }), ctx);
+    expect(ev.summary).toMatch(/checked the title only; item details not fetched yet/);
   });
 
   it("wrong jacket size → excluded with the exact reason", () => {

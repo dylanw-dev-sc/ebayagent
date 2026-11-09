@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { ListingSource, NormalizedListing } from "../../lib/domain/types";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
 
 /** Hash of the fields that matter for evaluation/pricing; timestamps excluded. */
-export function contentHash(l: Pick<NormalizedListing, "title" | "brandAspect" | "sizeAspect" | "materialAspect" | "aspects" | "ebayCategoryIds" | "conditionText" | "conditionId" | "priceMinor" | "currency" | "shippingStatus" | "shippingMinor" | "shippingCurrency" | "buyingOptions" | "imageUrl" | "itemUrl">): string {
+export function contentHash(l: Pick<NormalizedListing, "title" | "brandAspect" | "sizeAspect" | "materialAspect" | "aspects" | "ebayCategoryIds" | "conditionText" | "conditionId" | "priceMinor" | "currency" | "shippingStatus" | "shippingMinor" | "shippingCurrency" | "buyingOptions" | "imageUrl" | "itemUrl" | "description">): string {
   return createHash("sha1")
     .update(
       JSON.stringify([
@@ -25,6 +25,7 @@ export function contentHash(l: Pick<NormalizedListing, "title" | "brandAspect" |
         l.buyingOptions,
         l.imageUrl,
         l.itemUrl,
+        l.description,
       ]),
     )
     .digest("hex");
@@ -74,6 +75,7 @@ export function upsertListing(db: AppDb, item: NormalizedListing, queryCategoryI
         originAt: merged.originAt,
         queryCategoryIds: queryCategoryId !== null ? [queryCategoryId] : [],
         detailsFetchedAt: merged.detailsFetched ? now : null,
+        descriptionText: merged.description,
         firstSeenAt: now,
         lastSeenAt: now,
         contentHash: contentHash(merged),
@@ -92,6 +94,7 @@ export function upsertListing(db: AppDb, item: NormalizedListing, queryCategoryI
     aspects: keepDetails ? existing.aspects : item.aspects,
     ebayCategoryIds: keepDetails && existing.ebayCategoryIds.length ? existing.ebayCategoryIds : item.ebayCategoryIds,
     ebayCategoryPath: keepDetails ? existing.ebayCategoryPath ?? item.ebayCategoryPath : item.ebayCategoryPath ?? existing.ebayCategoryPath,
+    description: keepDetails ? existing.descriptionText : item.description,
   };
   const queryCategoryIds =
     queryCategoryId !== null && !existing.queryCategoryIds.includes(queryCategoryId)
@@ -130,6 +133,7 @@ export function upsertListing(db: AppDb, item: NormalizedListing, queryCategoryI
       originAt: merged.originAt ?? existing.originAt,
       queryCategoryIds,
       detailsFetchedAt: item.detailsFetched ? now : existing.detailsFetchedAt,
+      descriptionText: merged.description,
       lastSeenAt: now,
       contentHash: hash,
     })
@@ -149,6 +153,23 @@ export function purgeExpiredListings(db: AppDb, source: ListingSource, retention
   return db
     .delete(s.listings)
     .where(and(eq(s.listings.source, source), lt(s.listings.lastSeenAt, cutoff)))
+    .run().changes;
+}
+
+/**
+ * Delete listings posted before the listing-age window. Saved listings are
+ * kept (and refreshed by scans); dismissed/reviewed marks live separately.
+ */
+export function purgeOutsideWindow(db: AppDb, source: ListingSource, windowStart: Date): number {
+  return db
+    .delete(s.listings)
+    .where(
+      and(
+        eq(s.listings.source, source),
+        sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt}) < ${windowStart.getTime()}`,
+        sql`not exists (select 1 from ${s.listingUserStates} u where u.source = ${s.listings.source} and u.external_id = ${s.listings.externalId} and u.saved = 1)`,
+      ),
+    )
     .run().changes;
 }
 

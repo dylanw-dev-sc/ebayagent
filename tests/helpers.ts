@@ -65,6 +65,7 @@ export function listing(partial: Partial<ListingForEvaluation> & { title: string
     listedAt: new Date("2026-11-01T12:00:00Z"),
     originAt: new Date("2026-11-01T12:00:00Z"),
     detailsFetched: true,
+    description: null,
     queryCategoryIds: [],
     ...partial,
   };

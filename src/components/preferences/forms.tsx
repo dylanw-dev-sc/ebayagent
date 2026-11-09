@@ -241,6 +241,7 @@ export function DefaultsForm({ d }: { d: { unknownMaterialPolicy: string; exclud
 }
 
 export interface ScanSettingsValues {
+  maxListingAgeDays: number;
   pageSize: number;
   maxPagesPerQuery: number;
   lookbackHours: number;
@@ -263,6 +264,7 @@ export function ScanSettingsForm({ s }: { s: ScanSettingsValues }) {
   );
   return (
     <ActionForm action={updateScanSettingsAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {num("maxListingAgeDays", "Only listings posted in the last (days)", "1–30. Older listings are skipped and removed; saved items are kept")}
       {num("pageSize", "Results per page", "1–200 (eBay maximum 200)")}
       {num("maxPagesPerQuery", "Pages per search", "Each page is one API call")}
       {num("lookbackHours", "Look-back window (hours)", "eBay can index new listings late")}

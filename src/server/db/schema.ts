@@ -169,6 +169,8 @@ export const listings = sqliteTable(
     /** App category ids of the searches that found this listing. */
     queryCategoryIds: text("query_category_ids", { mode: "json" }).$type<number[]>().notNull().default(sql`'[]'`),
     detailsFetchedAt: integer("details_fetched_at", { mode: "timestamp_ms" }),
+    /** Seller description as plain text (from item details), truncated. */
+    descriptionText: text("description_text"),
     firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull(),
     /** Last time the source confirmed this listing's data ("last checked"). */
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
@@ -338,6 +340,8 @@ export const scanRuns = sqliteTable("scan_runs", {
   reviewNew: integer("review_new").notNull().default(0),
   rejectedNew: integer("rejected_new").notNull().default(0),
   purged: integer("purged").notNull().default(0),
+  /** Listings returned by eBay but posted before the listing-age window (not stored). */
+  skippedOld: integer("skipped_old").notNull().default(0),
   errorCount: integer("error_count").notNull().default(0),
   errors: text("errors", { mode: "json" }).$type<ScanErrorEntry[]>().notNull().default(sql`'[]'`),
   rateLimited: integer("rate_limited", { mode: "boolean" }).notNull().default(false),

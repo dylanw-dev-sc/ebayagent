@@ -113,6 +113,27 @@ describe("genuine vs faux materials and quality claims", () => {
   });
 });
 
+describe("seller description text", () => {
+  const readDesc = (description: string) => readMaterials({ title: "Shirt", materialAspect: null, aspects: [], description }, materials);
+
+  it("reads composition sentences", () => {
+    const r = readDesc("Great shirt.\nComposition: 65% cotton, 35% polyester.");
+    expect(r.components.map((c) => [c.key, c.pct, c.source])).toEqual([
+      ["cotton", 65, "description"],
+      ["polyester", 35, "description"],
+    ]);
+  });
+
+  it("ignores packaging and unrelated sentences", () => {
+    expect(readDesc("Fabric: 100% linen. Ships in a poly mailer. Check out my other cashmere sweaters!").components.map((c) => c.key)).toEqual(["linen"]);
+    expect(readDesc("Check out my other cashmere sweaters! Smoke-free home.").components).toEqual([]);
+  });
+
+  it("ignores linings in descriptions too", () => {
+    expect(readDesc("Shell: 100% wool. Lining: 100% polyester.").components.map((c) => c.key)).toEqual(["wool"]);
+  });
+});
+
 describe("missing material information", () => {
   it("is classified as unknown, not as a mismatch", () => {
     const a = assess("Crew neck tee grey");

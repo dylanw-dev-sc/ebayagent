@@ -15,7 +15,7 @@ import { joinHuman, stripAccents, uniq } from "../text";
 export interface MaterialComponent {
   key: string;
   pct: number | null;
-  source: "item_specifics" | "title";
+  source: "item_specifics" | "title" | "description";
   /** Added by implication (merino → wool), not stated directly. */
   implied?: boolean;
 }
@@ -58,6 +58,24 @@ const CLAIM_AFTER = new Set(["feel", "like", "look", "touch", "effect", "style",
 const LINING_WORDS = new Set(["lining", "lined", "linings", "fodera", "liner"]);
 const NEGATION_BEFORE = new Set(["no", "not", "non", "without"]);
 const SILK_PRINT_AFTER = new Set(["screen", "screened", "screenprint", "screenprinted", "print", "printed"]);
+/** "ships in a poly mailer" / "poly bag" describe packaging, not the garment. */
+const PACKAGING_AFTER = new Set(["bag", "bags", "mailer", "mailers", "envelope", "envelopes", "packaging", "packed", "wrapped"]);
+
+/**
+ * Description sentences are only read when they look like a composition
+ * statement (a percentage or words like "fabric", "material", "shell"), so
+ * boilerplate such as "see my other cashmere sweaters" is ignored.
+ */
+const DESCRIPTION_CUES = /\d{1,3}\s*%|\b(fabric|fabrics|material|materials|composition|content|contents|fiber|fibre|fibers|fibres|shell|outer|body|made of|made from)\b/i;
+
+export function descriptionMaterialText(description: string | null | undefined): string {
+  if (!description) return "";
+  return description
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((sentence) => DESCRIPTION_CUES.test(sentence))
+    .slice(0, 40)
+    .join(" ; ");
+}
 // Applied to prepped text (hyphens already turned into spaces).
 const FAUX_COMPOUNDS: Array<[RegExp, string]> = [
   [/\b(leatherette|pleather|ecopelle|leather look|eco leather)\b/, "leather"],
@@ -210,7 +228,7 @@ function scan(text: string, fibers: FiberMatcher[]): Hit[] {
       pct,
       faux: (!!before1 && FAUX_BEFORE.has(before1)) || (before2 === "man" && before1 === "made"),
       lining,
-      negated: !!before1 && NEGATION_BEFORE.has(before1),
+      negated: (!!before1 && NEGATION_BEFORE.has(before1)) || (!!after1 && PACKAGING_AFTER.has(after1)),
       claimWord,
     });
   }
@@ -220,7 +238,7 @@ function scan(text: string, fibers: FiberMatcher[]): Hit[] {
 const MATERIAL_ASPECT_NAMES = ["material", "outer shell material", "shell material", "fabric", "main material", "composition", "fabric content"];
 
 export function readMaterials(
-  input: { title: string; materialAspect: string | null; aspects: ItemAspect[] },
+  input: { title: string; materialAspect: string | null; aspects: ItemAspect[]; description?: string | null },
   materials: MaterialConfig[],
 ): MaterialReading {
   const fibers = compileFibers(materials);
@@ -269,6 +287,8 @@ export function readMaterials(
     for (const hit of scan(prepMaterial(t), fibers)) liningIgnored.push(hit.key);
   }
   consume(input.title, "title");
+  const descriptionText = descriptionMaterialText(input.description);
+  if (descriptionText) consume(descriptionText, "description");
 
   // Implied fibers (merino → wool) keep the same share.
   for (const c of [...components]) {
@@ -283,13 +303,16 @@ export function readMaterials(
     .map((m) => m.key);
 
   const allText = prepMaterial([input.title, ...aspectTexts].join(" "));
+  // Stated facts (e.g. "Supima") may also come from composition sentences in the description;
+  // marketing claims are only taken from the title / item specifics (descriptions are full of them).
+  const factText = prepMaterial([input.title, ...aspectTexts, descriptionText].join(" "));
   const claims = uniq([
     ...CLAIM_PATTERNS.map((re) => re.exec(allText)?.[0]).filter((x): x is string => !!x).map((c) => `“${c}”`),
     ...claimPhrases,
   ]);
   const facts = uniq(
     FACT_PATTERNS.flatMap(([re, label]) => {
-      const m = re.exec(allText);
+      const m = re.exec(factText);
       return m ? [label.replace("$1", m[1] ?? "")] : [];
     }),
   );

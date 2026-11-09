@@ -139,11 +139,13 @@ A different size is **excluded** with a reason, e.g. *"Excluded: jacket is size 
 
 ### Materials
 
-Fiber composition is parsed from item specifics and titles: percentages in either order, blends, linings ignored, and "merino" counted as wool.
+Fiber composition is parsed from item specifics, titles and the seller's description: percentages in either order, blends, linings ignored, and "merino" counted as wool. From descriptions, only composition-style sentences are read (a percentage, or words like "fabric", "material", "composition", "shell"), and packaging mentions like "ships in a poly mailer" don't count, so seller boilerplate doesn't create false matches.
+
+Photos are **never** read automatically. When no fabric is stated, the listing goes to *Needs review*, and the detail view's photo gallery makes it quick to check a care-label shot yourself.
 
 - **Faux materials** don't count as the real thing: "faux suede", microsuede, Ultrasuede, Alcantara, PU or vegan leather, and phrases like "cashmere feel" or "silk screen".
 - **Seller claims** ("premium", "luxury") are recorded separately and never treated as facts.
-- **Missing fabric** goes to *Needs review*, never to exclusion. This is configurable per profile.
+- **Missing fabric** goes to *Needs review*, never to exclusion, and the reason says where the app looked (title, item specifics, description). This is configurable per profile.
 - **Priorities** affect ranking. "Exclude" filters listings out; "Generally avoid" applies at ≥ 50% by default.
 
 ### Prices
@@ -156,11 +158,22 @@ Fiber composition is parsed from item specifics and titles: percentages in eithe
 ## Scanning
 
 1. **Plan:** enabled profiles become (brand × eBay category) queries, deduplicated across profiles. eBay allows one category per search.
-2. **Fetch:** each query is sorted `newlyListed`, uses up to 200 results per page, and stops early at the previous scan's newest listing, minus a look-back window (eBay can index new listings late).
+2. **Fetch:** each query is sorted `newlyListed`, uses up to 200 results per page, and asks eBay only for listings posted within the **listing window** (default: the last 7 days, via the `itemStartDate` filter). Paging stops at the window edge, or earlier at the previous scan's newest listing minus a look-back (eBay can index new listings late).
 3. **Store:** listings are deduplicated by eBay item ID and stored as new, updated or unchanged. Unchanged listings aren't re-processed unless your rules changed.
 4. **Enrich:** item details (brand, size, material) are fetched for undecided listings, within a per-scan limit.
 5. **Evaluate:** the matching and pricing engines run, and their decisions are stored.
 6. **Record:** each run's examined, new, updated, matched, review and rejected counts, errors, rate-limit stops and purges are saved.
+
+### Listing window
+
+Only listings **posted in the last 7 days** are considered (change it in *Preferences → Scanning*, 1–30 days):
+
+- "Posted" is eBay's original listing date, the same date eBay's own "newly listed" sort uses. A relisted item counts from when it was first listed.
+- Older listings are skipped even if eBay returns them, are counted in the scan history, and are removed once they age out. **Saved items are kept** and stay in *Saved Items*.
+- Finder views (except Saved and Dismissed) and the Cost Evaluator lists show only the window.
+- Changing the window resets the scan bookmarks, so the next scan covers the whole new window.
+
+The window mostly saves work rather than time. The first scan no longer pages back through old listings, and the item-detail budget is spent only on recent listings. Each scan still makes one search per brand × eBay category, which is where most of the time goes.
 
 If a scan is interrupted, it is marked *interrupted*; results up to the last completed page are kept. Only one scan runs at a time.
 
@@ -233,6 +246,8 @@ Data acquisition (`providers/`) is kept separate from the business rules (`match
 
 - **Live eBay access is unverified here:** the provider is built to eBay's documented contract and tested against mocked responses, but has not yet made a real call. See [Is access guaranteed?](#is-access-guaranteed).
 - **Call volume:** with the seeded profile, one scan plans ~216 searches (36 brands × 6 eBay categories) plus detail calls. That fits several scans a day within 5,000 calls; scanning more often needs a higher limit (eBay's free Application Growth Check) or fewer brands/categories.
+- **Relisted items** count from their original listing date, so an old unsold item relisted this week is skipped.
+- **Fabric in photos only** (e.g. a care-label shot) is not read automatically; such listings stay in *Needs review*.
 - **Most live search results need item details** for size and fabric. Details beyond the per-scan limit (default 100) fall back to the title, so more listings land in *Needs review*.
 - **Sizes beyond the configured rules** are converted only by those rules (IT/EU jacket sizes ≈ US + 10 go to review). Other systems (Japanese sizing, etc.) are not converted.
 - **USD only:** the US marketplace is targeted and other currencies aren't converted; they go to *Needs pricing review*.

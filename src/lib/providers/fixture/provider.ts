@@ -32,10 +32,12 @@ export interface FixtureProviderOptions {
   /** Testing hooks: simulate failures. */
   failWith?: "auth" | "access_denied" | "rate_limited_after" | "transient_once" | null;
   rateLimitAfterCalls?: number;
+  /** Simulate eBay ignoring the posted-date filter (reported to happen sometimes). */
+  ignorePostedAfter?: boolean;
 }
 
-export function fixtureImageUrl(id: string): string {
-  return `/api/fixture-image/${encodeURIComponent(id)}`;
+export function fixtureImageUrl(id: string, view?: "label"): string {
+  return `/api/fixture-image/${encodeURIComponent(id)}${view ? `?view=${view}` : ""}`;
 }
 
 export class FixtureProvider implements ListingProvider {
@@ -129,11 +131,12 @@ export class FixtureProvider implements ListingProvider {
       shippingCurrency: ship.type === "fixed" || ship.type === "free" ? currency : null,
       buyingOptions,
       imageUrl: fixtureImageUrl(item.id),
-      additionalImageUrls: [],
+      additionalImageUrls: item.labelText ? [fixtureImageUrl(item.id, "label")] : [],
       itemUrl: null, // fixtures never link to a (non-existent) eBay listing
       listedAt,
       originAt: listedAt,
       detailsFetched: withDetails,
+      description: withDetails ? item.description ?? null : null,
     };
   }
 
@@ -144,6 +147,7 @@ export class FixtureProvider implements ListingProvider {
       .filter((i) => !query.ebayCategoryId || i.ebayCategoryId === query.ebayCategoryId)
       .filter((i) => query.includeAuctions || !i.auction)
       .filter((i) => !query.conditionIds.length || query.conditionIds.includes(i.conditionId))
+      .filter((i) => this.opts.ignorePostedAfter || !query.postedAfter || this.now.getTime() - i.hoursAgo * 3_600_000 >= query.postedAfter.getTime())
       .filter((i) => {
         const hay = ` ${normalizePhrase(`${i.title} ${i.details?.brand ?? ""}`)} `;
         return kw.every((t) => hay.includes(` ${t} `));

@@ -57,10 +57,40 @@ function garment(kind: FixtureGarment, fill: string): string {
   }
 }
 
-export async function GET(_req: Request, ctx: RouteContext<"/api/fixture-image/[id]">) {
+function escapeXml(s: string): string {
+  return s.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
+}
+
+/** A close-up "care label" photo, so the manual tag-check workflow can be tried with fixtures. */
+function careLabel(item: (typeof FIXTURE_ITEMS)[number]): string {
+  const brand = escapeXml((item.details?.brand ?? item.title.split(" ").slice(0, 2).join(" ")).toUpperCase());
+  const size = escapeXml(item.details?.size ?? "");
+  const lines = (item.labelText ?? "").split("|").map(escapeXml);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="800" height="1000" role="img" aria-label="Sample care-label photo (fixture data)">
+  <rect width="400" height="500" fill="${item.color}"/>
+  <rect width="400" height="500" fill="#000" opacity="0.08"/>
+  <g transform="rotate(-3 200 250)">
+    <rect x="95" y="80" width="210" height="300" rx="6" fill="#f7f4ec" stroke="#d8d2c4" stroke-width="2"/>
+    <rect x="103" y="88" width="194" height="284" rx="4" fill="none" stroke="#cfc8b8" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <text x="200" y="140" text-anchor="middle" font-family="Georgia, serif" font-size="${brand.length > 14 ? 14 : 20}" letter-spacing="${brand.length > 14 ? 1 : 2}" fill="#2a2724">${brand}</text>
+    ${size ? `<text x="200" y="178" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#2a2724">${size}</text>` : ""}
+    ${lines.map((t, i) => `<text x="200" y="${228 + i * 30}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" letter-spacing="1" fill="#3b3733">${t}</text>`).join("")}
+    <g transform="translate(128 318)" fill="none" stroke="#3b3733" stroke-width="2">
+      <path d="M0 18 L6 2 L30 2 L36 18 Z"/><circle cx="62" cy="10" r="9"/><path d="M90 2 L114 2 L102 20 Z"/><rect x="130" y="1" width="18" height="18"/>
+    </g>
+  </g>
+  <text x="384" y="488" text-anchor="end" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" letter-spacing="1.5" fill="#f1efea">SAMPLE IMAGE · FIXTURE</text>
+</svg>`;
+}
+
+export async function GET(req: Request, ctx: RouteContext<"/api/fixture-image/[id]">) {
   const { id } = await ctx.params;
   const item = FIXTURE_ITEMS.find((i) => i.id === decodeURIComponent(id));
   if (!item) return new Response("Not found", { status: 404 });
+  if (new URL(req.url).searchParams.get("view") === "label" && item.labelText) {
+    return new Response(careLabel(item), { headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" } });
+  }
   const bg = "#efece6";
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="800" height="1000" role="img" aria-label="Sample illustration (fixture data)">

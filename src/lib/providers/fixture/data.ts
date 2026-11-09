@@ -30,6 +30,10 @@ export interface FixtureItem {
   auction?: boolean;
   /** Item specifics returned only by the detail call (like eBay getItem). */
   details?: { brand?: string; size?: string; sizeType?: string; material?: string; other?: Array<[string, string]> };
+  /** Seller description, returned only by the detail call (like eBay getItem). */
+  description?: string;
+  /** Text printed on a care-label photo (rendered as an extra sample image; never read by the app). */
+  labelText?: string;
   /** Later changes (e.g. a price drop) applied from a given batch onward. */
   revisions?: Array<{ batch: number; price?: string; shipping?: FixtureShipping }>;
 }
@@ -52,7 +56,7 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   // ---------------------------------------------------------------- Shirts (T-shirts & polos)
   { id: "FX-101", batch: 1, title: "Sunspel Classic Crew Neck T-Shirt Navy Size L", ebayCategoryId: T, garment: "tee", color: "#2b3a55", price: "38.00", shipping: { type: "fixed", cost: "5.00" }, ...NWT, hoursAgo: 3, details: { brand: "Sunspel", size: "L", material: "100% Cotton" }, revisions: [{ batch: 2, price: "32.00" }] },
   { id: "FX-102", batch: 1, title: "John Smedley Knitted Polo Shirt Mens XL Navy", ebayCategoryId: P, garment: "polo", color: "#1f2a3c", price: "95.00", shipping: { type: "free" }, ...EXC, hoursAgo: 5, details: { brand: "John Smedley", size: "XL", material: "100% Merino Wool" } },
-  { id: "FX-103", batch: 1, title: "Brunello Cucinelli Crew Neck Tee Grey Size L", ebayCategoryId: T, garment: "tee", color: "#9a9a96", price: "145.00", shipping: { type: "fixed", cost: "8.00" }, ...GOOD, hoursAgo: 7, details: { brand: "Brunello Cucinelli", size: "L" } },
+  { id: "FX-103", batch: 1, title: "Brunello Cucinelli Crew Neck Tee Grey Size L", ebayCategoryId: T, garment: "tee", color: "#9a9a96", price: "145.00", shipping: { type: "fixed", cost: "8.00" }, ...GOOD, hoursAgo: 7, details: { brand: "Brunello Cucinelli", size: "L" }, description: "Great condition, worn twice. Measurements in photos. Smoke-free home.", labelText: "100% COTTON|MADE IN ITALY" },
   { id: "FX-104", batch: 1, title: "Loro Piana Polo Shirt Size Large Ivory", ebayCategoryId: P, garment: "polo", color: "#e8e0cf", price: "210.00", shipping: { type: "free" }, ...EXC, hoursAgo: 9, details: { brand: "Loro Piana", size: "L", material: "70% Cotton 30% Silk" } },
   // Keyword search for "Ralph Lauren Purple Label" returns this (all four words appear), but it is Black Label in purple — phrase matching rejects it.
   { id: "FX-105", batch: 1, title: "Ralph Lauren Black Label Purple Dress Shirt Size L", ebayCategoryId: D, garment: "shirt", color: "#5b3f78", price: "64.00", shipping: { type: "fixed", cost: "6.00" }, ...GOOD, hoursAgo: 4, details: { brand: "Ralph Lauren Black Label", size: "L", material: "100% Cotton" } },
@@ -62,7 +66,7 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   { id: "FX-108", batch: 1, title: "Tom Ford Henley T-Shirt Size M", ebayCategoryId: T, garment: "tee", color: "#151515", price: "130.00", shipping: { type: "free" }, ...NWOT, hoursAgo: 16, details: { brand: "Tom Ford", size: "M", material: "Lyocell" } },
   { id: "FX-109", batch: 1, title: "Acne Studios Logo Print T-Shirt Size XL", ebayCategoryId: T, garment: "tee", color: "#d9c7b8", price: "48.00", shipping: { type: "fixed", cost: "6.00" }, ...GOOD, hoursAgo: 18, details: { brand: "Acne Studios", size: "XL", material: "65% Polyester 35% Cotton" } },
   { id: "FX-110", batch: 1, title: "Golden Bear Jack Nicklaus Golf Polo Shirt XL", ebayCategoryId: P, garment: "polo", color: "#b8a24a", price: "18.00", shipping: { type: "fixed", cost: "5.00" }, ...GOOD, hoursAgo: 20, details: { brand: "Golden Bear", size: "XL", material: "100% Polyester" } },
-  { id: "FX-111", batch: 1, title: "Norse Projects Niels Standard Tee Size Large", ebayCategoryId: T, garment: "tee", color: "#7f8f86", price: "35.00", shipping: { type: "fixed", cost: "5.50" }, ...EXC, hoursAgo: 22 },
+  { id: "FX-111", batch: 1, title: "Norse Projects Niels Standard Tee Size Large", ebayCategoryId: T, garment: "tee", color: "#7f8f86", price: "35.00", shipping: { type: "fixed", cost: "5.50" }, ...EXC, hoursAgo: 22, labelText: "100% ORGANIC COTTON|MADE IN PORTUGAL" },
   { id: "FX-112", batch: 1, title: "Drake's Jersey Pocket T-Shirt L", ebayCategoryId: T, garment: "tee", color: "#c9b48f", price: "45.00", shipping: { type: "calculated" }, ...EXC, hoursAgo: 25, details: { brand: "Drake's", size: "L", material: "100% Cotton" } },
   { id: "FX-113", batch: 1, title: "Sunspel Riviera Polo Shirt Size Large Tall", ebayCategoryId: P, garment: "polo", color: "#f0efe9", price: "52.00", shipping: { type: "free" }, ...GOOD, hoursAgo: 27, details: { brand: "Sunspel", size: "L", sizeType: "Tall", material: "100% Cotton" } },
   { id: "FX-114", batch: 1, title: "A.P.C. Jimmy T-Shirt White Size XL", ebayCategoryId: T, garment: "tee", color: "#f4f3ee", price: "40.00", shipping: { type: "none" }, ...NWT, hoursAgo: 30, details: { brand: "A.P.C.", size: "XL", material: "100% Cotton" } },
@@ -79,6 +83,8 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   { id: "FX-209", batch: 1, title: "Zegna Button Up Shirt Size L Light Blue", ebayCategoryId: CB, garment: "shirt", color: "#b9d0e6", price: "70.00", shipping: { type: "fixed", cost: "6.00" }, ...EXC, hoursAgo: 19, details: { brand: "Ermenegildo Zegna", size: "L", material: "100% Cotton" } },
   { id: "FX-210", batch: 1, title: "Z Zegna Slim Fit Button Down Shirt L", ebayCategoryId: CB, garment: "shirt", color: "#e3e7ea", price: "29.00", shipping: { type: "fixed", cost: "5.00" }, ...GOOD, hoursAgo: 21, details: { brand: "Z Zegna", size: "L", material: "100% Cotton" } },
   { id: "FX-211", batch: 1, title: "RRL Double RL Indigo Chambray Work Shirt Size L", ebayCategoryId: CB, garment: "shirt", color: "#3e5a7a", price: "125.00", shipping: { type: "fixed", cost: "9.00" }, ...EXC, hoursAgo: 23, details: { brand: "RRL", size: "L", material: "100% Cotton" } },
+  // Fabric appears only in the description; "poly mailer" and "other cashmere sweaters" must not count.
+  { id: "FX-213", batch: 1, title: "Boglioli Button Down Shirt Size XL Navy", ebayCategoryId: CB, garment: "shirt", color: "#2f3d55", price: "68.00", shipping: { type: "fixed", cost: "6.00" }, ...EXC, hoursAgo: 27, details: { brand: "Boglioli", size: "XL" }, description: "Pre-owned Boglioli shirt in excellent condition, no flaws. Fabric: 100% linen. Ships in a poly mailer. Check out my other cashmere sweaters!" },
   { id: "FX-212", batch: 1, title: "Brunello Cucinelli Slim Fit Button Down Shirt L", ebayCategoryId: CB, garment: "shirt", color: "#e9e4d8", price: "160.00", shipping: { type: "free" }, ...EXC, hoursAgo: 26, details: { brand: "Brunello Cucinelli", size: "L", material: "Cotton" } },
 
   // ---------------------------------------------------------------- Jackets & outerwear

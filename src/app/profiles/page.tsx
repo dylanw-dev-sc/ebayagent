@@ -8,6 +8,7 @@ import { CreateProfileForm } from "@/components/profiles/override-forms";
 import { Badge, PageHeader, PageSkeleton, buttonClass, cn } from "@/components/ui";
 import * as s from "@/server/db/schema";
 import { loadBrands, loadCategories, loadGroups } from "@/server/services/context";
+import { listingWindowStart } from "@/server/services/feed";
 import { listProfiles } from "@/server/services/profiles";
 import { getSystemStatus } from "@/server/services/status";
 import { requestDb } from "@/server/request";
@@ -42,7 +43,7 @@ async function ProfilesContent() {
   const matchCounts = new Map(
     db
       .all<{ profileId: number; state: string; n: number }>(
-        sql`select m.profile_id as profileId, m.state as state, count(*) as n from ${s.listingProfileMatches} m join ${s.listings} l on l.id = m.listing_id where l.source = ${source} group by m.profile_id, m.state`,
+        sql`select m.profile_id as profileId, m.state as state, count(*) as n from ${s.listingProfileMatches} m join ${s.listings} l on l.id = m.listing_id where l.source = ${source} and coalesce(l.origin_at, l.listed_at, l.first_seen_at) >= ${listingWindowStart(db).getTime()} group by m.profile_id, m.state`,
       )
       .map((r) => [`${r.profileId}:${r.state}`, Number(r.n)]),
   );

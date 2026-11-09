@@ -36,6 +36,30 @@ export interface EbayItemSummary {
   itemOriginDate?: string;
 }
 
+/** Longest description text kept per listing (enough for fabric details; avoids storing whole pages). */
+export const MAX_DESCRIPTION_CHARS = 4000;
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+const safeChar = (code: number) => (Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ");
+
+/** Convert seller description HTML to plain text (no rendering, no scripts). */
+export function htmlToText(html: string | null | undefined, maxChars = MAX_DESCRIPTION_CHARS): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<(script|style|noscript|iframe)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\s*(br|\/p|\/div|\/li|\/tr|\/h[1-6]|\/td)\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeChar(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => safeChar(Number(d)))
+    .replace(/&([a-z#0-9]+);/gi, (m, name) => ENTITIES[name.toLowerCase()] ?? m)
+    .replace(/[ \t\f\v\u00a0]+/g, " ")
+    .replace(/\s*\n\s*/g, "\n")
+    .trim();
+  if (!text) return null;
+  return text.length > maxChars ? text.slice(0, maxChars) : text;
+}
+
 export interface EbayItem extends EbayItemSummary {
   brand?: string;
   size?: string;
@@ -48,6 +72,8 @@ export interface EbayItem extends EbayItemSummary {
   localizedAspects?: Array<{ name?: string; value?: string; type?: string }>;
   estimatedAvailabilities?: Array<{ estimatedAvailabilityStatus?: string }>;
   itemEndDate?: string;
+  description?: string;
+  shortDescription?: string;
 }
 
 function parseDate(s: string | undefined): Date | null {
@@ -109,6 +135,7 @@ export function mapItemSummary(item: EbayItemSummary): NormalizedListing | null 
     listedAt: parseDate(item.itemCreationDate),
     originAt: parseDate(item.itemOriginDate) ?? parseDate(item.itemCreationDate),
     detailsFetched: false,
+    description: null,
   };
 }
 
@@ -144,5 +171,6 @@ export function mapItemDetail(item: EbayItem): NormalizedListing | null {
     ebayCategoryIds: item.categoryId ? [item.categoryId] : base.ebayCategoryIds,
     ebayCategoryPath: item.categoryPath ?? base.ebayCategoryPath,
     detailsFetched: true,
+    description: htmlToText(item.description ?? item.shortDescription),
   };
 }

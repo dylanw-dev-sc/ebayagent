@@ -25,7 +25,8 @@ async function main() {
     console.log(`Status: ${r.status}`);
     console.log(`Queries: ${r.queriesCompleted}/${r.queriesPlanned} · API calls: ${r.apiCalls} search + ${r.detailCalls} detail`);
     console.log(`Examined: ${r.examined} · new: ${r.newListings} · updated: ${r.updatedListings} · unchanged: ${r.unchangedListings} · duplicates: ${r.duplicates}`);
-    console.log(`New listings → matches: ${r.matchedNew} · needs review: ${r.reviewNew} · not a match: ${r.rejectedNew} · purged (retention): ${r.purged}`);
+    console.log(`New listings → matches: ${r.matchedNew} · needs review: ${r.reviewNew} · not a match: ${r.rejectedNew}`);
+    console.log(`Skipped (posted before the listing window): ${r.skippedOld} · removed (window/retention): ${r.purged} · saved items refreshed: ${r.refreshedSaved}`);
     for (const e of r.errors.slice(0, 10)) console.log(`  ! [${e.code}] ${e.query ?? ""} ${e.message}`);
     process.exitCode = r.status === "failed" ? 1 : 0;
   } catch (err) {

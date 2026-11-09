@@ -140,6 +140,8 @@ export class EbayProvider implements ListingProvider {
     if (query.conditionIds.length) filters.push(`conditionIds:{${query.conditionIds.join("|")}}`);
     if (query.includeAuctions) filters.push("buyingOptions:{FIXED_PRICE|AUCTION|BEST_OFFER}");
     if (query.deliveryCountry) filters.push(`deliveryCountry:${query.deliveryCountry}`);
+    // Server-side age filter (documented Browse filter; open-ended range, UTC).
+    if (query.postedAfter) filters.push(`itemStartDate:[${query.postedAfter.toISOString().replace(/\.\d{3}Z$/, "Z")}..]`);
     if (filters.length) params.set("filter", filters.join(","));
     return `${this.host()}/buy/browse/v1/item_summary/search?${params.toString()}`;
   }

@@ -74,6 +74,7 @@ async function ScansContent() {
           <h2 className="font-display text-2xl font-semibold">eBay API use</h2>
           <dl className="mt-4 space-y-3 text-sm">
             <KeyValue label="Calls in the last 24 h">{isFixture ? "0 (fixture mode)" : `${st.callsLast24h.toLocaleString()} of ${st.dailyCallBudget.toLocaleString()} budget`}</KeyValue>
+            <KeyValue label="Listing window">Only listings posted in the last {settings.maxListingAgeDays} days (by eBay&apos;s original listing date). Older ones are skipped and removed unless saved.</KeyValue>
             <KeyValue label="Per scan">
               Up to {settings.maxPagesPerQuery} page(s) × {settings.pageSize} results per brand × eBay category, plus ≤ {settings.detailFetchLimit} item-detail calls
             </KeyValue>
@@ -146,7 +147,10 @@ async function ScansContent() {
                     <td className="px-4 py-3 tabular">
                       {r.apiCalls} + {r.detailCalls}
                     </td>
-                    <td className="px-4 py-3 tabular">{r.examined.toLocaleString()}</td>
+                    <td className="px-4 py-3 tabular">
+                      {r.examined.toLocaleString()}
+                      {r.skippedOld ? <p className="text-xs text-ink-3">{r.skippedOld.toLocaleString()} older than window</p> : null}
+                    </td>
                     <td className="px-4 py-3 tabular">{r.newListings.toLocaleString()}</td>
                     <td className="px-4 py-3 tabular">{r.updatedListings.toLocaleString()}</td>
                     <td className="px-4 py-3 font-semibold text-match tabular">{r.matchedNew}</td>

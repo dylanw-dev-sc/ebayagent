@@ -7,12 +7,14 @@ import type { AppDb } from "../src/server/db/client";
 import * as s from "../src/server/db/schema";
 import { getRunningScan, recoverInterruptedScans, runScan, ScanInProgressError } from "../src/server/scanner/run";
 import { updateCategory, updateScanSettings } from "../src/server/services/preferences";
+import type { ProviderQuery, SearchPageRequest } from "../src/lib/providers/types";
 import { createPricingRule, setPriceOverride, updatePricingRule } from "../src/server/services/pricing";
 import { getFeed } from "../src/server/services/feed";
 import { getUserState, setUserState } from "../src/server/services/user-state";
 import { brandId, categoryId, memoryDb } from "./helpers";
 
-const NOW = new Date("2026-11-09T12:00:00Z");
+// Fixture timestamps are relative to "now" so the rolling listing-age window never makes these tests date-dependent.
+const NOW = new Date();
 const fixture = (batch: number, extra: ConstructorParameters<typeof FixtureProvider>[0] = {}) => new FixtureProvider({ batch, now: NOW, ...extra });
 const scan = (db: AppDb, provider: ListingProvider) => runScan(db, { provider, trigger: "test" });
 
@@ -105,6 +107,81 @@ describe("scanning, normalization and deduplication", () => {
     expect(second.unchangedListings).toBeGreaterThan(0);
     expect(listingByExt(db, "FX-101")!.priceMinor).toBe(3200);
     expect(db.select().from(s.listings).all().length).toBe(before + second.newListings);
+  });
+});
+
+describe("seller descriptions", () => {
+  it("reads fabric stated only in the description, ignoring packaging and boilerplate", async () => {
+    const { db } = memoryDb();
+    await scan(db, fixture(1));
+    const ev = evalByExt(db, "FX-213")!;
+    expect(ev.state).toBe("match");
+    expect(ev.materialKeys).toEqual(["linen"]); // not polyester ("poly mailer") or cashmere ("my other cashmere sweaters")
+    expect(listingByExt(db, "FX-213")!.descriptionText).toContain("100% linen");
+    // A description without composition keeps the listing in review and says where the app looked.
+    expect(evalByExt(db, "FX-103")!.summary).toBe(
+      "Needs review: seller did not provide fabric composition (checked the title, item specifics and description).",
+    );
+    // Care-label photos are offered for manual checking, never read automatically.
+    expect(listingByExt(db, "FX-103")!.additionalImages).toEqual(["/api/fixture-image/FX-103?view=label"]);
+  });
+});
+
+describe("listing-age window (only recent postings)", () => {
+  const oldSunspel = { ...FIXTURE_ITEMS.find((i) => i.id === "FX-101")!, id: "FX-OLD", hoursAgo: 24 * 10, title: "Sunspel Classic Crew Neck T-Shirt Grey Size L", revisions: [] };
+
+  it("asks the source for listings posted within the window", async () => {
+    const { db } = memoryDb();
+    class Spy extends FixtureProvider {
+      postedAfter: Array<Date | null | undefined> = [];
+      async search(q: ProviderQuery, p: SearchPageRequest) {
+        this.postedAfter.push(q.postedAfter);
+        return super.search(q, p);
+      }
+    }
+    const spy = new Spy({ batch: 1, now: NOW, items: [...FIXTURE_ITEMS, oldSunspel] });
+    const r = await scan(db, spy);
+    const expected = Date.now() - 7 * 86_400_000;
+    expect(spy.postedAfter.length).toBeGreaterThan(0);
+    expect(spy.postedAfter.every((d) => d instanceof Date && Math.abs(d.getTime() - expected) < 60_000)).toBe(true);
+    expect(listingByExt(db, "FX-OLD")).toBeUndefined(); // filtered by the source
+    expect(r.skippedOld).toBe(0);
+  });
+
+  it("skips old listings itself when the source ignores the date filter", async () => {
+    const { db } = memoryDb();
+    const r = await scan(db, fixture(1, { items: [...FIXTURE_ITEMS, oldSunspel], ignorePostedAfter: true }));
+    expect(r.skippedOld).toBeGreaterThanOrEqual(1);
+    expect(listingByExt(db, "FX-OLD")).toBeUndefined();
+    expect(listingByExt(db, "FX-101")).toBeDefined();
+    expect(db.select().from(s.scanRuns).where(eq(s.scanRuns.id, r.runId)).get()!.skippedOld).toBe(r.skippedOld);
+  });
+
+  it("hides listings that age out of the window, keeps saved ones, and removes unsaved ones on the next scan", async () => {
+    const { db } = memoryDb();
+    await scan(db, fixture(1));
+    const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000);
+    db.update(s.listings).set({ originAt: eightDaysAgo, listedAt: eightDaysAgo }).where(eq(s.listings.externalId, "FX-101")).run();
+    db.update(s.listings).set({ originAt: eightDaysAgo, listedAt: eightDaysAgo }).where(eq(s.listings.externalId, "FX-102")).run();
+    setUserState(db, "fixture", "FX-102", { saved: true });
+
+    const all = feed(db, "all").items.map((i) => i.externalId);
+    expect(all).not.toContain("FX-101");
+    expect(all).not.toContain("FX-102");
+    expect(feed(db, "saved").items.map((i) => i.externalId)).toEqual(["FX-102"]);
+
+    await scan(db, fixture(1, { items: FIXTURE_ITEMS.filter((i) => i.id !== "FX-101" && i.id !== "FX-102") }));
+    expect(listingByExt(db, "FX-101")).toBeUndefined(); // aged out, not saved → removed
+    expect(listingByExt(db, "FX-102")).toBeDefined(); // saved → kept
+  });
+
+  it("changing the window resets scan bookmarks so the next scan covers it", async () => {
+    const { db } = memoryDb();
+    await scan(db, fixture(1));
+    expect(db.select().from(s.queryStates).all().length).toBeGreaterThan(0);
+    updateScanSettings(db, { maxListingAgeDays: 14 });
+    expect(db.select().from(s.queryStates).all()).toHaveLength(0);
+    expect(() => updateScanSettings(db, { maxListingAgeDays: 0 })).toThrow(/between 1 and 30/);
   });
 });
 

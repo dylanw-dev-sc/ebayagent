@@ -68,8 +68,9 @@ export async function FeedView({ basePath, searchParams, fixedView }: { basePath
           <div />
         )}
         <div className="flex items-center justify-between gap-4 pb-2 md:justify-end">
-          <p className="whitespace-nowrap text-[13px] text-ink-3 tabular">
+          <p className="whitespace-nowrap text-[13px] text-ink-3 tabular" title="Change the window in Preferences → Scanning">
             {feed.total.toLocaleString()} {feed.total === 1 ? "listing" : "listings"}
+            {filters.view !== "saved" && filters.view !== "dismissed" ? ` · posted in the last ${feed.windowDays} days` : ""}
           </p>
           <SortSelect />
         </div>

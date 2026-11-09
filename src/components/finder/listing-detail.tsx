@@ -7,6 +7,7 @@ import type { getListingDetail } from "@/server/services/feed";
 import { ActionButton, ActionForm, SubmitButton } from "../forms";
 import { Badge, KeyValue, cn } from "../ui";
 import { DetailActions } from "./card-actions";
+import { PhotoGallery } from "./photo-gallery";
 
 type Detail = NonNullable<ReturnType<typeof getListingDetail>>;
 
@@ -40,25 +41,12 @@ export function ListingDetail({ d, staleAfterHours }: { d: Detail; staleAfterHou
   return (
     <div className="space-y-8 px-5 py-6 sm:px-7">
       {/* Hero */}
-      <div className="grid gap-6 sm:grid-cols-[minmax(0,15rem)_1fr]">
-        <div className="space-y-2">
-          <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-muted ring-1 ring-line">
-            {l.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={l.imageUrl} alt={l.title} className="size-full object-cover" />
-            ) : (
-              <div className="grid size-full place-items-center text-xs text-ink-3">No image provided</div>
-            )}
-          </div>
-          {l.additionalImages.length ? (
-            <div className="grid grid-cols-4 gap-1.5">
-              {l.additionalImages.slice(0, 8).map((src) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={src} src={src} alt="" loading="lazy" className="aspect-square rounded-md object-cover ring-1 ring-line" />
-              ))}
-            </div>
-          ) : null}
-        </div>
+      <div className="grid gap-6 sm:grid-cols-[minmax(0,18rem)_1fr]">
+        <PhotoGallery
+          images={[l.imageUrl, ...l.additionalImages].filter((x, i, all): x is string => !!x && all.indexOf(x) === i)}
+          alt={l.title}
+          labelHint={reading.status === "unknown"}
+        />
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap gap-1.5">
             <Badge tone={STATE_TONE[d.evaluation.state]}>{STATE_LABEL[d.evaluation.state]}</Badge>

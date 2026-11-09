@@ -344,10 +344,12 @@ export function updateDefaults(db: AppDb, patch: Partial<DefaultsSetting>): Defa
 }
 
 export function updateScanSettings(db: AppDb, patch: Partial<ScanSettings>): ScanSettings {
-  const next = { ...loadScanSettings(db), ...patch };
+  const previous = loadScanSettings(db);
+  const next = { ...previous, ...patch };
   const intIn = (v: number, lo: number, hi: number, label: string) => {
     if (!Number.isInteger(v) || v < lo || v > hi) throw new ValidationError(`${label} must be a whole number between ${lo} and ${hi}.`);
   };
+  intIn(next.maxListingAgeDays, 1, 30, "Listing age window (days)");
   intIn(next.pageSize, 1, 200, "Page size");
   intIn(next.maxPagesPerQuery, 1, 50, "Pages per query");
   intIn(next.lookbackHours, 0, 168, "Look-back hours");
@@ -358,5 +360,9 @@ export function updateScanSettings(db: AppDb, patch: Partial<ScanSettings>): Sca
   intIn(next.staleAfterHours, 1, 24, "Stale-after hours");
   if (next.deliveryCountry && !/^[A-Z]{2}$/.test(next.deliveryCountry)) throw new ValidationError("Delivery country must be a 2-letter code like US.");
   saveSetting(db, "scan", next);
+  if (next.maxListingAgeDays !== previous.maxListingAgeDays) {
+    // Forget per-search bookmarks so the next scan covers the whole new window.
+    db.delete(s.queryStates).run();
+  }
   return next;
 }

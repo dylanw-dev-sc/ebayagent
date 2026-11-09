@@ -62,8 +62,17 @@ export interface FeedItem {
 
 const VIEW_STATE: Partial<Record<FeedView, MatchState>> = { matches: "match", review: "review", excluded: "no_match" };
 
-function baseConditions(f: Omit<FeedFilters, "view" | "sort" | "page" | "pageSize">, source: ListingSource, view: FeedView): SQL[] {
+/** When a listing was posted: eBay's original listing date, falling back to creation / first seen. */
+const postedAt = sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`;
+
+export function listingWindowStart(db: AppDb, now = Date.now()): Date {
+  return new Date(now - Math.max(1, loadScanSettings(db).maxListingAgeDays) * 86_400_000);
+}
+
+function baseConditions(f: Omit<FeedFilters, "view" | "sort" | "page" | "pageSize">, source: ListingSource, view: FeedView, windowStart: Date): SQL[] {
   const c: SQL[] = [eq(s.listings.source, source)];
+  // Saved and Dismissed show everything you marked; the other views show only the listing-age window.
+  if (view !== "saved" && view !== "dismissed") c.push(sql`${postedAt} >= ${windowStart.getTime()}`);
   const dismissed = sql`coalesce(${s.listingUserStates.dismissed}, 0)`;
   const state = VIEW_STATE[view];
   if (state) c.push(eq(s.listingEvaluations.state, state), sql`${dismissed} = 0`);
@@ -121,7 +130,8 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
   const categoryNames = new Map(db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).all().map((c) => [c.id, c.name]));
   const profileNames = new Map(db.select({ id: s.searchProfiles.id, name: s.searchProfiles.name }).from(s.searchProfiles).all().map((p) => [p.id, p.name]));
 
-  const conds = baseConditions(f, source, f.view);
+  const windowStart = listingWindowStart(db);
+  const conds = baseConditions(f, source, f.view, windowStart);
   const recency = sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`;
   const totalOrItem = sql`coalesce(${s.pricingDecisions.totalMinor}, ${s.listings.priceMinor})`;
   const unknownTotalLast = sql`case when ${s.pricingDecisions.totalMinor} is null then 1 else 0 end`;
@@ -179,14 +189,14 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
 
   const nonView = { ...f };
   const counts = {
-    matches: countFor(db, baseConditions(nonView, source, "matches")),
-    review: countFor(db, baseConditions(nonView, source, "review")),
-    excluded: countFor(db, baseConditions(nonView, source, "excluded")),
-    saved: countFor(db, baseConditions(nonView, source, "saved")),
-    dismissed: countFor(db, baseConditions(nonView, source, "dismissed")),
+    matches: countFor(db, baseConditions(nonView, source, "matches", windowStart)),
+    review: countFor(db, baseConditions(nonView, source, "review", windowStart)),
+    excluded: countFor(db, baseConditions(nonView, source, "excluded", windowStart)),
+    saved: countFor(db, baseConditions(nonView, source, "saved", windowStart)),
+    dismissed: countFor(db, baseConditions(nonView, source, "dismissed", windowStart)),
   };
 
-  return { items, total, counts, page: f.page, pageSize: f.pageSize };
+  return { items, total, counts, page: f.page, pageSize: f.pageSize, windowDays: loadScanSettings(db).maxListingAgeDays };
 }
 
 /** Values available for the filter controls (from evaluated listings of this source). */
@@ -250,7 +260,7 @@ export function getListingDetail(db: AppDb, id: number) {
 
 /** Lists for the Cost Evaluator: eligible / over ceiling / needs pricing review. */
 export function getPricingList(db: AppDb, source: ListingSource, status: PricingFilter, opts: { onlyRelevant: boolean; limit: number }) {
-  const conds: SQL[] = [eq(s.listings.source, source), eq(s.pricingDecisions.status, status)];
+  const conds: SQL[] = [eq(s.listings.source, source), eq(s.pricingDecisions.status, status), sql`${postedAt} >= ${listingWindowStart(db).getTime()}`];
   if (opts.onlyRelevant) conds.push(sql`${s.listingEvaluations.state} in ('match', 'review')`);
   const brandNames = new Map(db.select({ id: s.brands.id, name: s.brands.name }).from(s.brands).all().map((b) => [b.id, b.name]));
   const categoryNames = new Map(db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).all().map((c) => [c.id, c.name]));

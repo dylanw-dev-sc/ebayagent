@@ -6,7 +6,7 @@ import * as s from "../db/schema";
 import type { ScanErrorEntry } from "../db/schema";
 import { loadEngineContext, loadScanSettings } from "../services/context";
 import { recomputePricing, reevaluateListings, rowToListing } from "../services/evaluation";
-import { deleteListingByExternalId, purgeExpiredListings, upsertListing } from "../services/listings-write";
+import { deleteListingByExternalId, purgeExpiredListings, purgeOutsideWindow, upsertListing } from "../services/listings-write";
 import { planQueries } from "./plan";
 import { createProvider } from "./provider-factory";
 
@@ -38,6 +38,8 @@ export interface ScanResult {
   reviewNew: number;
   rejectedNew: number;
   purged: number;
+  /** Returned by the source but posted before the listing-age window, so not stored. */
+  skippedOld: number;
   /** Saved listings re-checked via item details because their data was stale. */
   refreshedSaved: number;
   errors: ScanErrorEntry[];
@@ -126,6 +128,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     reviewNew: 0,
     rejectedNew: 0,
     purged: 0,
+    skippedOld: 0,
     refreshedSaved: 0,
     errors: [],
     rateLimited: false,
@@ -154,6 +157,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         newListings: r.newListings,
         updatedListings: r.updatedListings,
         unchangedListings: r.unchangedListings,
+        skippedOld: r.skippedOld,
         errorCount: r.errors.length,
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,
@@ -167,6 +171,9 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
   const callsUsed = () => r.apiCalls + r.detailCalls;
   const budgetLeft = () => budgetStart - callsUsed();
 
+  // Only listings posted within the window are considered (by eBay's original listing date).
+  const windowStart = new Date(startedAt.getTime() - Math.max(1, settings.maxListingAgeDays) * 86_400_000);
+
   const seen = new Set<string>();
   const touched = new Set<number>();
   const newIds = new Set<number>();
@@ -178,7 +185,9 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     for (const q of plan) {
       if (stopAll) break;
       const state = db.select().from(s.queryStates).where(eq(s.queryStates.queryKey, q.key)).get();
-      const cutoff = state?.watermarkAt ? new Date(state.watermarkAt.getTime() - settings.lookbackHours * 3_600_000) : null;
+      // Stop paging at the previous scan's newest listing (minus a look-back), but never go past the window.
+      const watermarkCutoff = state?.watermarkAt ? new Date(state.watermarkAt.getTime() - settings.lookbackHours * 3_600_000) : null;
+      const cutoff = watermarkCutoff && watermarkCutoff > windowStart ? watermarkCutoff : windowStart;
       let offset = 0;
       let pages = 0;
       let newest: Date | null = state?.watermarkAt ?? null;
@@ -199,7 +208,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         }
         let page;
         try {
-          page = await provider.search(q, { offset, limit: Math.min(200, Math.max(1, settings.pageSize)) });
+          page = await provider.search({ ...q, postedAfter: windowStart }, { offset, limit: Math.min(200, Math.max(1, settings.pageSize)) });
           r.apiCalls++;
         } catch (err) {
           r.apiCalls++;
@@ -219,7 +228,12 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
             r.examined++;
             const origin = item.originAt ?? item.listedAt;
             if (origin && (!newest || origin > newest)) newest = origin;
-            if (cutoff && origin && origin < cutoff) reachedCutoff = true;
+            if (origin && origin < cutoff) reachedCutoff = true;
+            if (origin && origin < windowStart) {
+              // eBay's date filter is applied server-side, but don't rely on it alone.
+              r.skippedOld++;
+              continue;
+            }
             if (seen.has(item.externalId)) {
               r.duplicates++;
               // Still record that this query's category also found it.
@@ -367,7 +381,8 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     }
 
     // --- Retention (eBay data-use rules): purge listings not re-confirmed recently.
-    r.purged = purgeExpiredListings(db, provider.id === "fixture" ? "fixture" : "ebay", settings.retentionDays, now());
+    const source = provider.id === "fixture" ? "fixture" : "ebay";
+    r.purged = purgeExpiredListings(db, source, settings.retentionDays, now()) + purgeOutsideWindow(db, source, windowStart);
 
     if (fatal) r.status = r.examined > 0 ? "partial" : "failed";
     else if (r.rateLimited || budgetExhausted) r.status = "partial";
@@ -395,6 +410,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         reviewNew: r.reviewNew,
         rejectedNew: r.rejectedNew,
         purged: r.purged,
+        skippedOld: r.skippedOld,
         errorCount: r.errors.length,
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,

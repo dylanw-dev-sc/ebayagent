@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { EbayConfig } from "../src/lib/providers/ebay/config";
 import { readEbayConfig } from "../src/lib/providers/ebay/config";
-import { composeSize, mapItemSummary, mapShipping } from "../src/lib/providers/ebay/mapper";
+import { composeSize, htmlToText, mapItemSummary, mapShipping } from "../src/lib/providers/ebay/mapper";
 import { EbayProvider } from "../src/lib/providers/ebay/provider";
 import { ProviderError, ProviderRateLimitError, type ProviderQuery } from "../src/lib/providers/types";
 import { runScan } from "../src/server/scanner/run";
@@ -42,6 +42,8 @@ const query: ProviderQuery = {
   deliveryCountry: "US",
 };
 
+const RECENT = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const summary = {
   itemId: "v1|1234567890|0",
   legacyItemId: "1234567890",
@@ -55,8 +57,9 @@ const summary = {
   conditionId: "2990",
   leafCategoryIds: ["3001"],
   categories: [{ categoryId: "3001", categoryName: "Suits & Suit Separates" }],
-  itemCreationDate: "2026-11-08T10:00:00.000Z",
-  itemOriginDate: "2026-11-08T10:00:00.000Z",
+  // Relative to now so the rolling 7-day listing window never makes these tests date-dependent.
+  itemCreationDate: RECENT,
+  itemOriginDate: RECENT,
 };
 
 describe("eBay configuration", () => {
@@ -113,6 +116,12 @@ describe("Browse search requests and mapping", () => {
     expect(headers["X-EBAY-C-MARKETPLACE-ID"]).toBe("EBAY_US");
   });
 
+  it("adds the posted-date filter (itemStartDate) for the listing window", () => {
+    const p = new EbayProvider(config(), { minIntervalMs: 0 });
+    const url = p.buildSearchUrl({ ...query, postedAfter: new Date("2026-11-02T12:00:00.123Z") }, { offset: 0, limit: 10 });
+    expect(new URL(url).searchParams.get("filter")).toBe("conditionIds:{1000|2990},deliveryCountry:US,itemStartDate:[2026-11-02T12:00:00Z..]");
+  });
+
   it("adds a buyingOptions filter only when auctions are requested", () => {
     const p = new EbayProvider(config(), { minIntervalMs: 0 });
     expect(new URL(p.buildSearchUrl({ ...query, includeAuctions: true }, { offset: 0, limit: 10 })).searchParams.get("filter")).toContain(
@@ -138,7 +147,8 @@ describe("Browse search requests and mapping", () => {
       sizeAspect: null,
       materialAspect: null,
     });
-    expect(l.listedAt?.toISOString()).toBe("2026-11-08T10:00:00.000Z");
+    expect(l.listedAt?.toISOString()).toBe(RECENT);
+    expect(l.description).toBeNull(); // search summaries carry no description
   });
 
   it("maps shipping: free, fixed, calculated-without-cost, and missing", () => {
@@ -241,6 +251,7 @@ describe("item details", () => {
       sizeType: "Regular",
       material: "100% Cashmere",
       categoryId: "3001",
+      description: "<div><p>Beautiful jacket.</p><p>Composition: 100%&nbsp;cashmere &amp; silk lining</p><script>alert(1)</script></div>",
       localizedAspects: [
         { name: "Brand", value: "Kiton", type: "STRING" },
         { name: "Size", value: "44", type: "STRING" },
@@ -253,6 +264,7 @@ describe("item details", () => {
     expect(calls.at(-1)!.url).toBe("https://api.ebay.com/buy/browse/v1/item/v1%7C1234567890%7C0");
     expect(r.ended).toBe(false);
     expect(r.listing).toMatchObject({ brandAspect: "Kiton", sizeAspect: "44 Regular", materialAspect: "100% Cashmere", detailsFetched: true });
+    expect(r.listing!.description).toBe("Beautiful jacket.\nComposition: 100% cashmere & silk lining");
     expect(composeSize("L", "Regular")).toBe("L");
     expect(composeSize("XL", "Tall")).toBe("XL Tall");
   });
@@ -261,6 +273,15 @@ describe("item details", () => {
     const { fetchImpl } = mockFetch(({ url }) => (url.includes("/oauth2/token") ? tokenOk() : json(404, { errors: [{ errorId: 11001, message: "Item not found" }] })));
     const p = new EbayProvider(config(), { fetchImpl, minIntervalMs: 0 });
     expect(await p.getItem("v1|1|0")).toEqual({ externalId: "v1|1|0", listing: null, ended: true });
+  });
+});
+
+describe("description HTML to text", () => {
+  it("strips tags, scripts and entities, keeps line breaks, and truncates", () => {
+    expect(htmlToText("<p>Line&nbsp;one</p><br/>Line &#8220;two&#8221; &amp; more<style>p{}</style>")).toBe("Line one\nLine “two” & more");
+    expect(htmlToText("&#99999999; ok")).toBe("ok");
+    expect(htmlToText("")).toBeNull();
+    expect(htmlToText("a".repeat(5000), 100)!.length).toBe(100);
   });
 });
 

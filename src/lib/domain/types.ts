@@ -49,6 +49,8 @@ export interface NormalizedListing {
   originAt: Date | null;
   /** True when provider fetched full item details (aspects) for this listing. */
   detailsFetched: boolean;
+  /** Seller's description as plain text (from item details), truncated. Null when not fetched/provided. */
+  description: string | null;
 }
 
 // ---------------------------------------------------------------------------

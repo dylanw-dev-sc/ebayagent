@@ -290,6 +290,8 @@ export const seedDefaults: DefaultsSetting = {
 };
 
 export interface ScanSettings {
+  /** Only consider listings posted within this many days (by eBay's original listing date). */
+  maxListingAgeDays: number;
   /** Results per search page (eBay max 200). */
   pageSize: number;
   /** Maximum pages per query per scan (each page is one API call). */
@@ -313,6 +315,7 @@ export interface ScanSettings {
 }
 
 export const seedScanSettings: ScanSettings = {
+  maxListingAgeDays: 7,
   pageSize: 200,
   maxPagesPerQuery: 2,
   lookbackHours: 24,

@@ -192,6 +192,7 @@ export async function updateScanSettingsAction(_prev: ActionResult | null, fd: F
       return v;
     };
     updateScanSettings(getDb(), {
+      maxListingAgeDays: n("maxListingAgeDays"),
       pageSize: n("pageSize"),
       maxPagesPerQuery: n("maxPagesPerQuery"),
       lookbackHours: n("lookbackHours"),

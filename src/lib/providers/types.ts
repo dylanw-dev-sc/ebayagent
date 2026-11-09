@@ -17,6 +17,8 @@ export interface ProviderQuery {
   conditionIds: string[];
   includeAuctions: boolean;
   deliveryCountry: string | null;
+  /** Only listings posted at/after this time (eBay filter itemStartDate). */
+  postedAfter?: Date | null;
 }
 
 export interface SearchPageRequest {

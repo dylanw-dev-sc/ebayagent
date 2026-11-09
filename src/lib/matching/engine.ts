@@ -92,7 +92,7 @@ export function extractFacts(listing: ListingForEvaluation, ctx: EngineContext):
   );
   const size = readListingSize({ sizeAspect: listing.sizeAspect, title: listing.title });
   const materialReading = readMaterials(
-    { title: listing.title, materialAspect: listing.materialAspect, aspects: listing.aspects },
+    { title: listing.title, materialAspect: listing.materialAspect, aspects: listing.aspects, description: listing.description },
     ctx.materials,
   );
   const material = assessMaterials(materialReading, ctx.materials, ctx.globalExcludedMaterialKeys);
@@ -198,7 +198,7 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
   if (s.requiredMaterialKeys.length) {
     const names = s.requiredMaterialKeys.map(nameOf).join(" or ");
     if (reading.status === "unknown") {
-      add("material", "review", `Can't confirm a required material (${names}): seller did not provide fabric composition`);
+      add("material", "review", `Can't confirm a required material (${names}): seller did not provide fabric composition in the title, item specifics or description`);
     } else if (!s.requiredMaterialKeys.some((k) => assessment.keys.includes(k))) {
       add("material", "exclude", `None of the required materials (${names}) listed — ${assessment.summary}`);
     } else {
@@ -206,12 +206,14 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
     }
   } else if (reading.status === "unknown") {
     if (s.unknownMaterialPolicy === "review") {
+      // Say where we looked: photos (e.g. a care-label shot) are never read automatically.
+      const looked = listing.detailsFetched ? "checked the title, item specifics and description" : "checked the title only; item details not fetched yet";
       add(
         "material",
         "review",
         reading.fauxDetected.length
-          ? `Seller did not provide genuine fabric composition (faux ${reading.fauxDetected.join(", ")} detected)`
-          : "Seller did not provide fabric composition",
+          ? `Seller did not provide genuine fabric composition (faux ${reading.fauxDetected.join(", ")} detected; ${looked})`
+          : `Seller did not provide fabric composition (${looked})`,
       );
     } else {
       add("material", "info", "Fabric composition not provided (allowed by this profile)");

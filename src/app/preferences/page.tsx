@@ -3,8 +3,10 @@ import { Suspense } from "react";
 import {
   deleteBrandAction,
   deleteCategoryAction,
+  deleteColorAction,
   deleteGroupAction,
   deleteMaterialAction,
+  setColorPriorityAction,
   setMaterialPriorityAction,
   toggleBrandAction,
   toggleCategoryAction,
@@ -13,12 +15,23 @@ import {
 import { ExpandableRow } from "@/components/expandable-row";
 import { ActionButton, SelectAction, Toggle } from "@/components/forms";
 import { BrandForm } from "@/components/preferences/brand-form";
-import { CategoryForm, ConditionCreateForm, DefaultsForm, GroupForm, MaterialCreateForm, MaterialEditForm, ScanSettingsForm } from "@/components/preferences/forms";
+import { ColorSwatch } from "@/components/color-swatch";
+import {
+  CategoryForm,
+  ColorCreateForm,
+  ColorEditForm,
+  ConditionCreateForm,
+  DefaultsForm,
+  GroupForm,
+  MaterialCreateForm,
+  MaterialEditForm,
+  ScanSettingsForm,
+} from "@/components/preferences/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, cn } from "@/components/ui";
-import type { MaterialPriority } from "@/lib/domain/types";
+import type { ColorPriority, MaterialPriority } from "@/lib/domain/types";
 import { configuredKeys, describeRange, MEASUREMENT_LABEL } from "@/lib/matching/measurements";
 import { minorToInput } from "@/lib/money";
-import { loadBrands, loadCategories, loadConditions, loadDefaultsSetting, loadGroups, loadMaterials, loadScanSettings } from "@/server/services/context";
+import { loadBrands, loadCategories, loadColors, loadConditions, loadDefaultsSetting, loadGroups, loadMaterials, loadScanSettings } from "@/server/services/context";
 import { requestDb } from "@/server/request";
 
 export const metadata: Metadata = { title: "Preferences" };
@@ -28,6 +41,7 @@ const SECTIONS = [
   ["groups", "Brand groups"],
   ["categories", "Categories & sizes"],
   ["materials", "Materials"],
+  ["colors", "Colors"],
   ["conditions", "Conditions"],
   ["defaults", "Defaults"],
   ["scan", "Scanning"],
@@ -36,6 +50,13 @@ const SECTIONS = [
 const PRIORITY_OPTIONS: Array<{ value: MaterialPriority; label: string }> = [
   { value: "very_high", label: "Very high priority" },
   { value: "high", label: "High priority" },
+  { value: "neutral", label: "Neutral" },
+  { value: "avoid", label: "Generally avoid" },
+  { value: "exclude", label: "Exclude" },
+];
+
+const COLOR_PRIORITY_OPTIONS: Array<{ value: ColorPriority; label: string }> = [
+  { value: "prefer", label: "Prefer" },
   { value: "neutral", label: "Neutral" },
   { value: "avoid", label: "Generally avoid" },
   { value: "exclude", label: "Exclude" },
@@ -68,6 +89,7 @@ async function PreferencesContent() {
   const brands = loadBrands(db);
   const categories = loadCategories(db);
   const materials = loadMaterials(db);
+  const colors = loadColors(db);
   const conditions = loadConditions(db);
   const defaults = loadDefaultsSetting(db);
   const scan = loadScanSettings(db);
@@ -282,6 +304,63 @@ async function PreferencesContent() {
           <div className="border-t border-line bg-canvas/60 p-4">
             <p className="mb-3 text-sm font-semibold text-ink">Add a material</p>
             <MaterialCreateForm />
+          </div>
+        </div>
+      </section>
+
+      {/* Colors */}
+      <section className="space-y-4">
+        <SectionTitle
+          id="colors"
+          title="Colors"
+          description="Read from the title and the seller's Color item specific (never from photos). Prefer and Generally avoid change the order when you sort by color or fabric preference. Exclude filters a listing out when every color it names is excluded; mixed colors go to review. A listing that names no color is never penalized. These apply to every search profile."
+        />
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b border-line bg-canvas text-xs text-ink-3">
+                <tr>
+                  <th className="px-4 py-2.5 font-semibold">Color</th>
+                  <th className="px-4 py-2.5 font-semibold">Preference</th>
+                  <th className="px-4 py-2.5 font-semibold">Detected by</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {colors.map((c) => (
+                  <ExpandableRow
+                    key={c.id}
+                    colSpan={4}
+                    cells={
+                      <>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-2 font-medium text-ink">
+                            <ColorSwatch colorKey={c.key} />
+                            {c.name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <SelectAction value={c.priority} options={COLOR_PRIORITY_OPTIONS} onChange={setColorPriorityAction.bind(null, c.id)} label={`${c.name} preference`} />
+                        </td>
+                        <td className="max-w-96 px-4 py-3 text-xs leading-5 text-ink-2">{c.keywords.join(", ")}</td>
+                      </>
+                    }
+                    editor={
+                      <div className="max-w-3xl space-y-3">
+                        <ColorEditForm c={{ id: c.id, name: c.name, keywords: c.keywords }} />
+                        <ActionButton action={deleteColorAction.bind(null, c.id)} confirm={`Delete ${c.name}?`} variant="danger" icon="trash">
+                          Delete color
+                        </ActionButton>
+                      </div>
+                    }
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-line bg-canvas/60 p-4">
+            <p className="mb-3 text-sm font-semibold text-ink">Add a color</p>
+            <ColorCreateForm />
           </div>
         </div>
       </section>

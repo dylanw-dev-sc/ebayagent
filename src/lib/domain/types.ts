@@ -121,6 +121,16 @@ export interface MaterialConfig {
   heavyThresholdPct: number | null;
 }
 
+export type ColorPriority = "prefer" | "neutral" | "avoid" | "exclude";
+
+export interface ColorConfig {
+  key: string;
+  name: string;
+  priority: ColorPriority;
+  /** Words that name this color in titles and the "Color" item specific. */
+  keywords: string[];
+}
+
 export interface ConditionConfig {
   key: string;
   name: string;

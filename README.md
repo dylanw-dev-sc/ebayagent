@@ -88,9 +88,9 @@ Product images are shown directly from eBay's image CDN and are never copied or 
 ## What you can do
 
 - **Product Finder:** an image grid with *Matches*, *Needs review*, *Excluded*, *All* and *Dismissed* tabs.
-  - Filter by brand, category, size, material, price eligibility, review status, search profile or title text.
-  - Sort by newly listed, lowest or highest total price, or material preference.
-  - Each card shows the brand, title, size, fabric, condition, price, shipping, total, match state, price eligibility and an eBay link, plus save, dismiss and mark-reviewed controls.
+  - Filter by brand, category, size, material, color, price eligibility, review status, search profile or title text.
+  - Sort by newly listed, lowest or highest total price, fabric preference (color breaks ties) or color preference (fabric breaks ties).
+  - Each card shows the brand, title, size, fabric, color, condition, price, shipping, total, match state, price eligibility and an eBay link, plus save, dismiss and mark-reviewed controls.
   - **New since your last visit:** listings found since your previous visit get a *New* badge, and a chip above the grid shows only those. A visit is a browsing session: badges stay put while you look around, and a new session starts after 30 minutes away.
   - The detail panel shows a full-size photo gallery, every fact with its source (including measurements and red-flag checks), the decision for each profile with reasons, the Cost Evaluator's reasoning, and a product-level price override.
   - **Fix the rule from the listing:** under *Wrong decision? Fix the rule*, the detail panel offers one-click fixes for what it just decided (see [Fixing a wrong decision](#fixing-a-wrong-decision)).
@@ -111,7 +111,7 @@ Product images are shown directly from eBay's image CDN and are never copied or 
   - **CSV import/export:** download your rules, or a template with a row for every enabled brand × category, fill it in a spreadsheet, and import it. Rows with a blank retail price are skipped (never deleted or filled in), existing rules are updated, and problems are reported by line number. Brands can be written as their name or any alias, and *All brands* means the category-wide rule.
 - **Saved Items:** everything you saved. Saved marks persist across sessions and rescans.
 - **Search Profiles:** create, edit, enable/disable, duplicate and delete. Every setting shows whether it is **Inherited** or an **Override**, with "Reset to default".
-- **Preferences:** brands (groups, aliases, exclusion phrases, eBay search keywords, enable/disable), brand groups, categories (category-specific sizes, measurement ranges, exclude keywords, eBay category mapping), material priorities, acceptable conditions, defaults (including counterfeit red-flag phrases) and scan settings (including the listing window and optional seller-feedback minimums).
+- **Preferences:** brands (groups, aliases, exclusion phrases, eBay search keywords, enable/disable), brand groups, categories (category-specific sizes, measurement ranges, exclude keywords, eBay category mapping), material priorities, color preferences, acceptable conditions, defaults (including counterfeit red-flag phrases) and scan settings (including the listing window and optional seller-feedback minimums).
 - **Scans & Status:** connection test, data mode (live or fixture), call usage, scan history with per-scan counts and errors, re-evaluation and clearing fixture data.
 
 ## Initial profile (seeded once, fully editable)
@@ -119,19 +119,20 @@ Product images are shown directly from eBay's image CDN and are never copied or 
 | Seeded item | Initial values |
 | --- | --- |
 | Brands | 36 brands in three groups (Valstar and Todd Snyder belong to two). |
-| Categories | Shirts (T-shirts, polos), Button-Down Shirts (casual and dress, with neck/sleeve support), Jackets & Outerwear (coats/jackets plus blazers/sport coats). |
-| Sizes | L/XL for shirts and button-downs; 44R for jackets. XL jackets go to *Needs review*, never assumed to be 44R. |
+| Categories | Shirts (T-shirts, polos), Button-Down Shirts (casual and dress, with neck/sleeve support), Jackets & Outerwear (coats/jackets plus blazers/sport coats), Sweaters & Knitwear (crewnecks, cardigans, roll necks, knit polos). |
+| Sizes | L/XL for shirts, button-downs and sweaters; 44R for jackets. XL jackets go to *Needs review*, never assumed to be 44R. Neck/sleeve sizes for dress shirts aren't set yet, so those shirts go to *Needs review*. |
 | Measurement ranges | **None.** Fit by measurements stays off until you enter your own ranges. |
 | Counterfeit red flags | Phrases like *replica*, *1:1*, *dupe* and *inspired by*; listings containing one are excluded. |
 | Seller minimums | **Off.** |
+| Colors | 21 common colors (navy, charcoal, camel, olive, burgundy…) with the words sellers use for them, all **Neutral** until you choose. |
 | Materials | Your very-high, high and avoid priorities. |
-| Conditions | All conditions accepted. |
+| Conditions | All accepted except *New with defects* and *Pre-owned – Fair*. |
 | Search profiles | All Preferences, Luxury Shirts, Heritage Jackets, Premium Button-Downs. |
 | Pricing rules | **None.** Retail baselines are yours to enter; the app never invents retail prices or depreciation rates. |
 
-The eBay US category IDs come from eBay's own category pages: 15687 T-Shirts, 185101 Polos, 57990 Casual Button-Down Shirts, 57991 Dress Shirts, 57988 Coats, Jackets & Vests, and 3001 Suits & Suit Separates. Blazers moved into 3001 when 3002 was retired.
+The eBay US category IDs come from eBay's own category pages: 15687 T-Shirts, 185101 Polos, 57990 Casual Button-Down Shirts, 57991 Dress Shirts, 57988 Coats, Jackets & Vests, 3001 Suits & Suit Separates, and 11484 Sweaters. Blazers moved into 3001 when 3002 was retired.
 
-The seed runs **once per database**. Restarts never overwrite your edits, and a forced re-seed adds no duplicates.
+The seed runs **once per database**. Restarts never overwrite your edits, and a forced re-seed adds no duplicates. Settings added by later versions (the Sweaters & Knitwear category, the two conditions turned off, the color list) are applied **once** to an existing database, and stored listings are re-checked right away. Anything you change or delete afterwards stays that way, and an existing category for eBay's Sweaters category isn't duplicated.
 
 ## How decisions are made
 
@@ -166,7 +167,7 @@ A different size is **excluded** with a reason, e.g. *"Excluded: jacket is size 
 
 ### Fit by measurements
 
-Labels vary by maker, so you can also judge fit by the seller's flat measurements. In *Preferences → Categories & sizes*, give a category a range (inches) for any of: **pit to pit** (chest), **length**, **shoulders**, **sleeve**. Nothing is set by default.
+Labels vary by maker, so you can also judge fit by the seller's flat measurements. In *Preferences → Categories & sizes*, give a category a range (inches) for any of: **pit to pit** (chest), **length**, **shoulders**, **sleeve**. Nothing is set by default. *How to measure* (next to the fields) explains how to measure clothes that fit you, and how to read neck/sleeve sizes from a dress shirt's collar label.
 
 The app reads measurements stated in the title or description, such as "Pit to pit 22.5 in", "P2P: 24.5\"" or "Pit-to-pit approx. 56 cm". Centimeters are converted. A "chest" figure too large to be a flat measurement is treated as the full circumference and halved. Implausible numbers are ignored, and so are center-back sleeve measurements.
 
@@ -190,6 +191,17 @@ Photos are **never** read automatically. When no fabric is stated, the listing g
 - **Seller claims** ("premium", "luxury") are recorded separately and never treated as facts.
 - **Missing fabric** goes to *Needs review*, never to exclusion, and the reason says where the app looked (title, item specifics, description). This is configurable per profile.
 - **Priorities** affect ranking. "Exclude" filters listings out; "Generally avoid" applies at ≥ 50% by default.
+
+### Colors
+
+Colors are read from the title and the seller's *Color* item specific (eBay often fills that with a general value like "Blue"). Photos and descriptions aren't used.
+
+- **Words, not pixels:** each color has the words sellers use for it (*navy* also covers "navy blue" and "midnight blue"), editable in *Preferences → Colors*. The longest phrase wins, so "light blue" isn't blue.
+- **Shades refine general colors:** a title saying "Navy" with item specifics saying "Blue" reads as navy. Real disagreements (title "Navy", item specifics "Black") keep both.
+- **Not colors:** your brand names ("Ralph Lauren Purple Label"), label lines ("Black Label"), "camel hair" and phrases like "mint condition" are ignored.
+- **Exclude** filters a listing out when every color it names is one you excluded, e.g. *"Excluded: color is navy, which you excluded."* With other colors too ("navy and white stripe"), it goes to review.
+- **Prefer / Generally avoid** only change the order: sort by *Color preference*, or by *Fabric preference*, where color breaks ties.
+- A listing that names no color is never penalized. Color preferences are global; search profiles don't override them.
 
 ### Prices
 
@@ -276,7 +288,7 @@ You can also `POST /api/scan` on a running server.
 
 ```
 src/lib/        Pure logic, no database or network: shared by app, CLI and tests
-  matching/     brand · size · measurements · material · red flags · category/condition → engine (per-profile decisions)
+  matching/     brand · size · measurements · material · color · red flags · category/condition → engine (per-profile decisions)
   pricing/      Cost Evaluator engine (integer cents, exact ceiling comparison)
   profiles/     inheritance resolver (defaults + overrides → effective settings with provenance)
   providers/    ListingProvider interface · ebay/ (OAuth, Browse, mapping, errors) · fixture/
@@ -310,17 +322,19 @@ Data acquisition (`providers/`) is kept separate from the business rules (`match
 - one-click corrections and the re-evaluation they trigger
 - "new since your last visit" sessions and previous/next across pages
 - the pricing grid and CSV import/export (quoting, formula-injection guard, per-line errors, round trip)
+- the Sweaters & Knitwear category, the default conditions, and one-time upgrades of existing databases (applied once, then your edits stick)
+- color reading (longest phrase, shades vs general colors, brand and label names ignored), color decisions, filter and sort
 
 Two optional browser tests drive the running app (each needs Playwright and its own scratch fixture database; see the file headers):
 - `e2e/smoke.mjs`: save, dismiss and review; pricing rules; brand and material edits; profile overrides; the detail drawer; and scanning.
-- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import.
+- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import, knitwear, color preferences and the measuring guide.
 
 ## Known limitations
 
 - **Live eBay access is unverified here:** the provider is built to eBay's documented contract and tested against mocked responses, but has not yet made a real call. See [Is access guaranteed?](#is-access-guaranteed).
-- **Call volume:** with the seeded profile, one scan plans ~216 searches (36 brands × 6 eBay categories) plus detail calls. That fits several scans a day within 5,000 calls; scanning more often needs a higher limit (eBay's free Application Growth Check) or fewer brands/categories.
+- **Call volume:** with the seeded profile, one scan plans ~252 searches (36 brands × 7 eBay categories) plus detail calls. That fits several scans a day within 5,000 calls; scanning more often needs a higher limit (eBay's free Application Growth Check) or fewer brands/categories.
 - **Relisted items** count from their original listing date, so an old unsold item relisted this week is skipped.
-- **Fabric in photos only** (e.g. a care-label shot) is not read automatically; such listings stay in *Needs review*. The same goes for measurements shown only in photos.
+- **Fabric in photos only** (e.g. a care-label shot) is not read automatically; such listings stay in *Needs review*. The same goes for measurements shown only in photos, and for colors: a listing that names no color is treated as color unknown.
 - **Red flags are phrases, not authentication.** They catch sellers who say what they're selling; they can't spot an undisclosed fake.
 - **Most live search results need item details** for size and fabric. Details beyond the per-scan limit (default 100) fall back to the title, so more listings land in *Needs review*.
 - **Sizes beyond the configured rules** are converted only by those rules (IT/EU jacket sizes ≈ US + 10 go to review). Other systems (Japanese sizing, etc.) are not converted.

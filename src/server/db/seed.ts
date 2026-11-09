@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { normalizePhrase, stripAccents } from "../../lib/text";
 import type { ProfileOverrides } from "../../lib/profiles/resolve";
@@ -7,6 +7,7 @@ import {
   SEED_VERSION,
   seedBrands,
   seedCategories,
+  seedColors,
   seedConditions,
   seedDefaults,
   seedGroups,
@@ -71,26 +72,7 @@ export function seedDatabase(db: Db, opts: { force?: boolean } = {}): { seeded: 
     }
 
     // Categories
-    for (const c of seedCategories) {
-      tx.insert(schema.categories)
-        .values({
-          slug: c.slug,
-          name: c.name,
-          noun: c.noun,
-          description: c.description,
-          sizeSystem: c.sizeSystem,
-          acceptedSizes: c.acceptedSizes,
-          reviewSizes: c.reviewSizes,
-          neckSizes: [],
-          sleeveLengths: [],
-          ebayCategoryIds: c.ebayCategoryIds,
-          titleKeywords: c.titleKeywords,
-          excludeKeywords: c.excludeKeywords,
-          sortOrder: c.sortOrder,
-        })
-        .onConflictDoNothing({ target: schema.categories.slug })
-        .run();
-    }
+    for (const c of seedCategories) insertSeedCategory(tx as unknown as Db, c, c.sortOrder);
     const categoryIdBySlug = new Map(tx.select().from(schema.categories).all().map((c) => [c.slug, c.id]));
 
     // Materials
@@ -111,9 +93,12 @@ export function seedDatabase(db: Db, opts: { force?: boolean } = {}): { seeded: 
         .run();
     });
 
+    // Colors (all Neutral until you choose)
+    insertSeedColors(tx as unknown as Db);
+
     // Conditions
     for (const c of seedConditions) {
-      tx.insert(schema.conditions).values({ ...c, accepted: true }).onConflictDoNothing({ target: schema.conditions.key }).run();
+      tx.insert(schema.conditions).values(c).onConflictDoNothing({ target: schema.conditions.key }).run();
     }
 
     // Search profiles (by name)
@@ -143,4 +128,91 @@ export function seedDatabase(db: Db, opts: { force?: boolean } = {}): { seeded: 
       .run();
   });
   return { seeded: true };
+}
+
+function insertSeedCategory(db: Db, c: (typeof seedCategories)[number], sortOrder: number): void {
+  db.insert(schema.categories)
+    .values({
+      slug: c.slug,
+      name: c.name,
+      noun: c.noun,
+      description: c.description,
+      sizeSystem: c.sizeSystem,
+      acceptedSizes: c.acceptedSizes,
+      reviewSizes: c.reviewSizes,
+      neckSizes: [],
+      sleeveLengths: [],
+      ebayCategoryIds: c.ebayCategoryIds,
+      titleKeywords: c.titleKeywords,
+      excludeKeywords: c.excludeKeywords,
+      sortOrder,
+    })
+    .onConflictDoNothing({ target: schema.categories.slug })
+    .run();
+}
+
+function insertSeedColors(db: Db): number {
+  let added = 0;
+  seedColors.forEach((c, i) => {
+    added += db
+      .insert(schema.colors)
+      .values({ key: c.key, name: c.name, keywords: c.keywords, priority: "neutral", sortOrder: i + 1 })
+      .onConflictDoNothing({ target: schema.colors.key })
+      .run().changes;
+  });
+  return added;
+}
+
+/**
+ * One-time changes for databases seeded by an earlier version of the app.
+ * Each runs at most once per database (recorded in meta), so anything you
+ * change or delete afterwards stays that way. A database seeded by this
+ * version already has them, so there they change nothing.
+ */
+const SEED_UPGRADES: Array<{ key: string; run: (db: Db) => boolean }> = [
+  {
+    // Sweaters & Knitwear (eBay 11484) — skipped if you already have a category like it.
+    key: "upgrade_2026_11_knitwear",
+    run: (db) => {
+      const seed = seedCategories.find((c) => c.slug === "knitwear")!;
+      const existing = db.select().from(schema.categories).all();
+      const clash = existing.some(
+        (c) =>
+          c.slug === seed.slug ||
+          normalizePhrase(c.name) === normalizePhrase(seed.name) ||
+          c.ebayCategoryIds.some((id) => seed.ebayCategoryIds.includes(id)),
+      );
+      if (clash) return false;
+      insertSeedCategory(db, seed, Math.max(0, ...existing.map((c) => c.sortOrder)) + 1);
+      return true;
+    },
+  },
+  {
+    // Stop accepting "New with defects" and "Pre-owned – Fair" (profile overrides are left alone).
+    key: "upgrade_2026_11_conditions",
+    run: (db) =>
+      db
+        .update(schema.conditions)
+        .set({ accepted: false })
+        .where(and(inArray(schema.conditions.key, ["new_with_defects", "preowned_fair"]), eq(schema.conditions.accepted, true)))
+        .run().changes > 0,
+  },
+  {
+    // Color preferences (all Neutral) — only if you have no colors yet.
+    key: "upgrade_2026_11_colors",
+    run: (db) => (db.select().from(schema.colors).get() ? false : insertSeedColors(db) > 0),
+  },
+];
+
+/** Apply pending one-time upgrades. Returns whether any of them changed your settings. */
+export function applySeedUpgrades(db: Db): { changed: boolean } {
+  let changed = false;
+  db.transaction((tx) => {
+    for (const u of SEED_UPGRADES) {
+      if (tx.select().from(schema.meta).where(eq(schema.meta.key, u.key)).get()) continue;
+      if (u.run(tx as unknown as Db)) changed = true;
+      tx.insert(schema.meta).values({ key: u.key, value: new Date().toISOString() }).run();
+    }
+  });
+  return { changed };
 }

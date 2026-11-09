@@ -164,6 +164,8 @@ export function mapItemDetail(item: EbayItem): NormalizedListing | null {
   const aspects: ItemAspect[] = (item.localizedAspects ?? [])
     .filter((a) => a.name && a.value)
     .map((a) => ({ name: a.name!, value: a.value! }));
+  // getItem also returns the seller's color as a top-level field; keep it with the item specifics.
+  if (item.color?.trim() && !aspectValue(aspects, ["Color", "Colour"])) aspects.push({ name: "Color", value: item.color.trim() });
   const sizeType = item.sizeType ?? aspectValue(aspects, ["Size Type", "Jacket/Coat Length", "Jacket Length", "Length"]);
   const size = item.size ?? aspectValue(aspects, ["Size", "Chest Size", "Size (Men's)"]);
   return {

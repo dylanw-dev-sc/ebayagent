@@ -4,6 +4,7 @@ import type {
   BrandConfig,
   BrandGroupConfig,
   CategoryConfig,
+  ColorConfig,
   ConditionConfig,
   MaterialConfig,
   ProfileForEvaluation,
@@ -77,6 +78,15 @@ export function loadMaterials(db: AppDb): Array<MaterialConfig & { id: number; n
       notes: m.notes,
       sortOrder: m.sortOrder,
     }));
+}
+
+export function loadColors(db: AppDb): Array<ColorConfig & { id: number; sortOrder: number }> {
+  return db
+    .select()
+    .from(s.colors)
+    .orderBy(asc(s.colors.sortOrder), asc(s.colors.name))
+    .all()
+    .map((c) => ({ id: c.id, key: c.key, name: c.name, priority: c.priority, keywords: c.keywords, sortOrder: c.sortOrder }));
 }
 
 export function loadConditions(db: AppDb): Array<ConditionConfig & { id: number; sortOrder: number }> {
@@ -180,6 +190,7 @@ export function loadEngineContext(db: AppDb): LoadedContext {
   const brands = loadBrands(db);
   const categories = loadCategories(db);
   const materials = loadMaterials(db);
+  const colors = loadColors(db);
   const conditions = loadConditions(db);
   const defaults = loadPersonalDefaults(db);
   const profiles = loadProfiles(db, { brands, categories, defaults });
@@ -192,7 +203,7 @@ export function loadEngineContext(db: AppDb): LoadedContext {
   }));
   const d = loadDefaultsSetting(db);
   const redFlags = { phrases: d.redFlagPhrases, policy: d.redFlagPolicy };
-  const engine = buildEngineContext({ brands, categories, materials, conditions, profiles: evalProfiles, redFlags });
+  const engine = buildEngineContext({ brands, categories, materials, colors, conditions, profiles: evalProfiles, redFlags });
   const rulesHash = createHash("sha1")
     .update(
       JSON.stringify({
@@ -200,6 +211,7 @@ export function loadEngineContext(db: AppDb): LoadedContext {
         brands: brands.map(({ notes, ...b }) => b),
         categories,
         materials: materials.map(({ notes, sortOrder, ...m }) => m),
+        colors: colors.map(({ id, sortOrder, ...c }) => c),
         conditions,
         profiles: evalProfiles,
         redFlags,

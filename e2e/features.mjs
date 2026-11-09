@@ -1,7 +1,7 @@
 /**
  * Optional browser test (not part of `npm test`) for fit by measurements,
- * counterfeit red flags, one-click corrections, keyboard triage and bulk
- * pricing setup (grid + CSV).
+ * counterfeit red flags, one-click corrections, keyboard triage, bulk
+ * pricing setup (grid + CSV), the knitwear category and color preferences.
  *
  * It MODIFIES data, so run it against its own scratch fixture database
  * (not one already used by e2e/smoke.mjs):
@@ -116,6 +116,35 @@ const check = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAI
   check('CSV import adds valid rows and reports bad lines', imported && ((await page.textContent('body')) || '').includes('1 added'));
   await settle();
   check('Imported Kiton rule ($1,625 max) is listed', ((await page.locator('table').first().textContent()) || '').includes('$1,625.00'));
+
+  // 7. Sweaters & knitwear (eBay category 11484)
+  await page.goto(`${BASE}/finder?q=John%20Smedley%20Merino%20Wool%20Crew%20Neck%20Sweater`); await settle();
+  check('Knitwear: the merino crewneck (L) is a Match, with its color', (await page.locator('article').count()) === 1 && (await cardText()).includes('Match') && (await cardText()).includes('Charcoal'));
+
+  // 8. Color preferences
+  const choose = async (label, value) => {
+    await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/preferences'), { timeout: 15000 }).catch(() => null),
+      page.getByLabel(label).selectOption(value),
+    ]);
+    await settle();
+  };
+  await page.goto(`${BASE}/preferences#colors`); await settle();
+  await choose('Navy preference', 'exclude');
+  await choose('Green preference', 'prefer');
+  await page.goto(`${BASE}/finder?view=excluded&q=Sunspel%20Classic%20Crew`); await settle();
+  check('Excluding Navy excludes a navy-only listing, with the reason', (await cardText()).includes('navy, which you excluded'));
+  await page.goto(`${BASE}/finder?view=all&color=navy`); await settle();
+  const navyCards = await page.locator('article').allInnerTexts();
+  check('Color filter shows only navy listings', navyCards.length > 0 && navyCards.every((t) => t.includes('Navy')), `${navyCards.length} cards`);
+  await page.goto(`${BASE}/finder?view=all&sort=color`); await settle();
+  check('Sorting by color preference puts your preferred color first', (await cardText()).includes('Green'));
+
+  // 9. Measuring guide next to the measurement ranges
+  await page.goto(`${BASE}/preferences#categories`); await settle();
+  const guide = page.locator('details', { hasText: 'How to measure' }).first();
+  await guide.locator('summary').click();
+  check('"How to measure" guide opens beside the measurement ranges', await guide.getByText('1 inch below the armpits').isVisible());
 
   console.log(results.join('\n'));
   console.log(errors.length ? `\nConsole/page errors (${errors.length}):\n` + errors.slice(0, 10).join('\n') : '\nNo console errors.');

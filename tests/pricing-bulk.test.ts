@@ -23,7 +23,7 @@ describe("pricing rules: CSV export / template / import", () => {
     const { db } = memoryDb();
     const rows = parseCsv(exportRulesCsv(db, { template: true }));
     expect(rows[0]).toEqual(RULE_CSV_HEADER);
-    expect(rows.length - 1).toBe(3 * (36 + 1)); // 3 categories × (36 brands + category-wide)
+    expect(rows.length - 1).toBe(4 * (36 + 1)); // 4 categories × (36 brands + category-wide)
     expect(rows[1].slice(0, 4)).toEqual(["Button-Down Shirts", "All brands", "", ""]);
   });
 

@@ -1,6 +1,6 @@
 "use server";
 
-import type { MaterialPriority, SizeSystem, UnknownMaterialPolicy } from "@/lib/domain/types";
+import type { ColorPriority, MaterialPriority, SizeSystem, UnknownMaterialPolicy } from "@/lib/domain/types";
 import { MEASUREMENT_KEYS, type MeasurementRanges } from "@/lib/matching/measurements";
 import type { RedFlagPolicy } from "@/lib/matching/red-flags";
 import { getDb } from "@/server/db/client";
@@ -8,15 +8,18 @@ import { bool, ids, int, list, money, optStr, str, type ActionResult } from "@/s
 import {
   createBrand,
   createCategory,
+  createColor,
   createCondition,
   createGroup,
   createMaterial,
   deleteBrand,
   deleteCategory,
+  deleteColor,
   deleteGroup,
   deleteMaterial,
   updateBrand,
   updateCategory,
+  updateColor,
   updateCondition,
   updateDefaults,
   updateGroup,
@@ -171,6 +174,26 @@ export async function createMaterialAction(_prev: ActionResult | null, fd: FormD
 
 export async function deleteMaterialAction(id: number): Promise<ActionResult> {
   return run(() => deleteMaterial(getDb(), id), "Material deleted.");
+}
+
+// --- Colors -------------------------------------------------------------------------------
+
+export async function setColorPriorityAction(id: number, priority: ColorPriority): Promise<ActionResult> {
+  return run(() => updateColor(getDb(), id, { priority }));
+}
+
+export async function updateColorAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return run(() => updateColor(getDb(), requireId(fd), { name: str(fd, "name"), keywords: list(fd, "keywords") }), "Color saved. Listings re-evaluated.");
+}
+
+export async function createColorAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return run(() => {
+    createColor(getDb(), { name: str(fd, "name"), priority: (str(fd, "priority") || "neutral") as ColorPriority, keywords: list(fd, "keywords") });
+  }, "Color added.");
+}
+
+export async function deleteColorAction(id: number): Promise<ActionResult> {
+  return run(() => deleteColor(getDb(), id), "Color deleted.");
 }
 
 // --- Conditions ------------------------------------------------------------------------------

@@ -1,10 +1,11 @@
 import { CircleAlert, CircleCheck, ExternalLink, Info, CircleX } from "lucide-react";
 import { clearPriceOverrideAction, setPriceOverrideAction } from "@/app/actions/listings";
 import { MATERIAL_LEVEL_LABEL, PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, formatDateTime, shippingText, timeAgo } from "@/lib/format";
-import type { Reason } from "@/lib/matching/engine";
+import type { ListingFacts, Reason } from "@/lib/matching/engine";
 import { formatBps, formatMoney, minorToInput } from "@/lib/money";
 import type { getListingDetail } from "@/server/services/feed";
 import { ActionButton, ActionForm, SubmitButton } from "../forms";
+import { ColorSwatch } from "../color-swatch";
 import { Badge, KeyValue, cn } from "../ui";
 import { DetailActions } from "./card-actions";
 import { PhotoGallery } from "./photo-gallery";
@@ -121,6 +122,21 @@ export function ListingDetail({
               {MATERIAL_LEVEL_LABEL[f.material.level] ?? f.material.level} ·{" "}
               {reading.status === "composition" ? "fiber percentages stated" : reading.status === "stated" ? "fibers named without percentages" : "seller gave no composition"}
             </span>
+          </KeyValue>
+          <KeyValue label="Color">
+            {f.color?.keys.length ? (
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {f.color.keys.map((k, i) => (
+                  <span key={k} className="inline-flex items-center gap-1.5">
+                    <ColorSwatch colorKey={k} />
+                    {f.color!.names[i] ?? k}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              "Not stated"
+            )}
+            <span className="block text-xs text-ink-3">{colorNote(f.color)}</span>
           </KeyValue>
           <KeyValue label="Measurements">
             {f.measurements?.found.length ? (
@@ -266,4 +282,13 @@ export function ListingDetail({
       </section>
     </div>
   );
+}
+
+function colorNote(c: ListingFacts["color"]): string {
+  if (!c) return "Not checked yet: re-evaluate listings or run a scan";
+  const aspect = c.aspect ? `“${c.aspect}”` : null;
+  if (c.source === "none") return aspect ? `Item specifics say ${aspect}, which isn't one of your colors` : "No color in the title or item specifics";
+  if (c.source === "item_specifics") return `From item specifics (${aspect})`;
+  const words = (c.titleWords ?? []).map((w) => `“${w}”`).join(", ");
+  return c.source === "both" ? `From the title (${words}) and item specifics (${aspect})` : `From the title (${words})`;
 }

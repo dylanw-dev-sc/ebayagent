@@ -7,7 +7,7 @@ import { loadScanSettings } from "./context";
 import { getPriceOverride } from "./pricing";
 
 export type FeedView = "matches" | "review" | "excluded" | "all" | "saved" | "dismissed";
-export type FeedSort = "newest" | "price_asc" | "price_desc" | "material";
+export type FeedSort = "newest" | "price_asc" | "price_desc" | "material" | "color";
 export type PricingFilter = "eligible" | "over_ceiling" | "needs_review";
 
 export interface FeedFilters {
@@ -16,6 +16,7 @@ export interface FeedFilters {
   categoryId?: number;
   size?: string;
   material?: string;
+  color?: string;
   pricing?: PricingFilter;
   review?: "unreviewed" | "reviewed";
   profileId?: number;
@@ -42,6 +43,8 @@ export interface FeedItem {
   sizeLabel: string | null;
   materialSummary: string;
   materialLevel: string;
+  /** e.g. "Navy, White" (null when the listing names no color). */
+  colorSummary: string | null;
   conditionLabel: string | null;
   priceMinor: number | null;
   currency: string | null;
@@ -91,6 +94,7 @@ function baseConditions(f: Omit<FeedFilters, "view" | "sort" | "page" | "pageSiz
   if (f.categoryId) c.push(eq(s.listingEvaluations.categoryId, f.categoryId));
   if (f.size) c.push(sql`exists (select 1 from json_each(${s.listingEvaluations.sizeKeys}) where value = ${f.size})`);
   if (f.material) c.push(sql`exists (select 1 from json_each(${s.listingEvaluations.materialKeys}) where value = ${f.material})`);
+  if (f.color) c.push(sql`exists (select 1 from json_each(${s.listingEvaluations.colorKeys}) where value = ${f.color})`);
   if (f.pricing) c.push(eq(s.pricingDecisions.status, f.pricing));
   if (f.review === "reviewed") c.push(sql`coalesce(${s.listingUserStates.reviewed}, 0) = 1`);
   if (f.review === "unreviewed") c.push(sql`coalesce(${s.listingUserStates.reviewed}, 0) = 0`);
@@ -114,9 +118,11 @@ function feedOrder(f: Pick<FeedFilters, "sort">) {
     ? [asc(unknownTotalLast), asc(totalOrItem), desc(recency), desc(s.listings.id)]
     : f.sort === "price_desc"
       ? [asc(unknownTotalLast), desc(totalOrItem), desc(recency), desc(s.listings.id)]
-      : f.sort === "material"
-        ? [desc(s.listingEvaluations.materialScore), desc(recency), desc(s.listings.id)]
-        : [desc(recency), desc(s.listings.id)];
+      : f.sort === "material" // fabric first; your color preferences break ties
+        ? [desc(s.listingEvaluations.materialScore), desc(s.listingEvaluations.colorScore), desc(recency), desc(s.listings.id)]
+        : f.sort === "color" // color first; fabric breaks ties
+          ? [desc(s.listingEvaluations.colorScore), desc(s.listingEvaluations.materialScore), desc(recency), desc(s.listings.id)]
+          : [desc(recency), desc(s.listings.id)];
 }
 
 /**
@@ -199,6 +205,7 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
     sizeLabel: e.sizeLabel,
     materialSummary: e.materialSummary,
     materialLevel: e.materialLevel,
+    colorSummary: e.colorSummary,
     conditionLabel: e.conditionLabel,
     priceMinor: l.priceMinor,
     currency: l.currency,
@@ -258,6 +265,12 @@ export function getFeedFacets(db: AppDb, source: ListingSource) {
     )
     .map((r) => r.value);
   const materials = db.select({ key: s.materials.key, name: s.materials.name }).from(s.materials).all();
+  const colorKeys = db
+    .all<{ value: string }>(
+      sql`select distinct j.value as value from ${s.listingEvaluations} e join ${s.listings} l on l.id = e.listing_id, json_each(e.color_keys) j where l.source = ${source}`,
+    )
+    .map((r) => r.value);
+  const colors = db.select({ key: s.colors.key, name: s.colors.name }).from(s.colors).orderBy(asc(s.colors.sortOrder)).all();
   return {
     brands: brandRows
       .map((r) => ({ id: r.id as number, name: brands.get(r.id as number) ?? "Unknown", count: Number(r.n) }))
@@ -265,6 +278,7 @@ export function getFeedFacets(db: AppDb, source: ListingSource) {
     categories: db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder)).all(),
     sizes,
     materials: materials.filter((m) => materialKeys.includes(m.key)),
+    colors: colors.filter((c) => colorKeys.includes(c.key)),
     profiles: db.select({ id: s.searchProfiles.id, name: s.searchProfiles.name }).from(s.searchProfiles).orderBy(asc(s.searchProfiles.sortOrder)).all(),
   };
 }

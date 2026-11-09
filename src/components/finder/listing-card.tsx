@@ -72,6 +72,7 @@ export function ListingCard({ item, detailHref, showReason, priority }: { item: 
           <span className={cn(item.materialLevel === "avoid" && "text-review", item.materialLevel === "unknown" && "italic")}>
             {item.materialLevel === "unknown" ? "Fabric not stated" : item.materialSummary}
           </span>
+          {item.colorSummary ? <> · {item.colorSummary}</> : null}
           {item.conditionLabel ? <> · {item.conditionLabel}</> : null}
         </p>
 

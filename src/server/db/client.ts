@@ -4,7 +4,8 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import fs from "node:fs";
 import path from "node:path";
 import * as schema from "./schema";
-import { seedDatabase } from "./seed";
+import { refreshDerivedData } from "../services/evaluation";
+import { applySeedUpgrades, seedDatabase } from "./seed";
 
 export type AppDb = BetterSQLite3Database<typeof schema>;
 
@@ -36,7 +37,11 @@ export function openDatabase(filePath: string, opts: { seed?: boolean } = {}): D
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: migrationsFolder() });
-  if (opts.seed !== false) seedDatabase(db);
+  if (opts.seed !== false) {
+    seedDatabase(db);
+    // Settings added by later versions; re-check stored listings if they changed anything.
+    if (applySeedUpgrades(db).changed) refreshDerivedData(db);
+  }
   return { db, sqlite, path: filePath };
 }
 

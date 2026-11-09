@@ -1,6 +1,7 @@
 import type {
   BrandConfig,
   CategoryConfig,
+  ColorConfig,
   ConditionConfig,
   MatchState,
   MaterialConfig,
@@ -11,6 +12,7 @@ import { formatMoney } from "../money";
 import { containsPhrase, normalizePhrase } from "../text";
 import { compileBrandMatcher, detectBrand, type BrandDetection, type BrandMatcher } from "./brand";
 import { resolveCategory, resolveCondition, type CategoryResolution, type ConditionResolution } from "./category";
+import { assessColors, colorList, readColors, type ColorReading } from "./color";
 import { assessMaterials, PRIORITY_LABEL, readMaterials, type MaterialAssessment, type MaterialReading } from "./material";
 import { combineSizeAndMeasurements, judgeMeasurements, readMeasurements, type MeasurementReading } from "./measurements";
 import { DEFAULT_RED_FLAG_PHRASES, findRedFlags, type RedFlagPolicy } from "./red-flags";
@@ -25,7 +27,7 @@ import { evaluateSize, readListingSize, type SizeReading } from "./size";
  */
 
 export type ReasonEffect = "pass" | "review" | "exclude" | "info";
-export type Dimension = "brand" | "authenticity" | "category" | "size" | "condition" | "material" | "keyword" | "price";
+export type Dimension = "brand" | "authenticity" | "category" | "size" | "condition" | "material" | "color" | "keyword" | "price";
 
 export interface Reason {
   dimension: Dimension;
@@ -51,6 +53,8 @@ export interface ListingFacts {
   measurements: MeasurementReading;
   /** Counterfeit red-flag phrases found in the title or description. */
   redFlags: string[];
+  /** Garment colors from the title and the "Color" item specific (optional in facts stored before colors existed). */
+  color?: ColorReading & { names: string[] };
 }
 
 export interface ListingEvaluation {
@@ -61,6 +65,7 @@ export interface ListingEvaluation {
   matchedProfileIds: number[];
   reviewProfileIds: number[];
   materialScore: number;
+  colorScore: number;
 }
 
 export interface EngineContext {
@@ -68,23 +73,37 @@ export interface EngineContext {
   matcher: BrandMatcher;
   categories: CategoryConfig[];
   materials: MaterialConfig[];
+  /** Your color preferences (global; profiles don't override them). */
+  colors: ColorConfig[];
   conditions: ConditionConfig[];
   profiles: ProfileForEvaluation[];
   /** Material keys excluded globally (priority "exclude") — used for ranking display. */
   globalExcludedMaterialKeys: string[];
   /** Counterfeit red-flag phrases and what to do when one appears. */
   redFlags: { phrases: string[]; policy: RedFlagPolicy };
+  /** Brand names, aliases and never-match phrases: never read as colors ("Purple Label"). */
+  colorIgnorePhrases: string[];
 }
 
 export function buildEngineContext(
-  input: Omit<EngineContext, "matcher" | "globalExcludedMaterialKeys" | "redFlags"> & { redFlags?: EngineContext["redFlags"] },
+  input: Omit<EngineContext, "matcher" | "globalExcludedMaterialKeys" | "redFlags" | "colors" | "colorIgnorePhrases"> & {
+    redFlags?: EngineContext["redFlags"];
+    colors?: ColorConfig[];
+  },
 ): EngineContext {
   return {
     ...input,
+    colors: input.colors ?? [],
     redFlags: input.redFlags ?? { phrases: DEFAULT_RED_FLAG_PHRASES, policy: "exclude" },
     matcher: compileBrandMatcher(input.brands),
     globalExcludedMaterialKeys: input.materials.filter((m) => m.priority === "exclude").map((m) => m.key),
+    colorIgnorePhrases: input.brands.flatMap((b) => [b.name, ...b.aliases, ...b.excludePhrases]),
   };
+}
+
+/** The seller's "Color" item specific (eBay also returns it as a top-level field, mapped to the same aspect). */
+export function colorAspectOf(listing: Pick<NormalizedListing, "aspects">): string | null {
+  return listing.aspects.find((a) => /^colou?r$/i.test(a.name.trim()))?.value ?? null;
 }
 
 export interface ListingForEvaluation extends NormalizedListing {
@@ -116,13 +135,19 @@ export function extractFacts(listing: ListingForEvaluation, ctx: EngineContext):
     condition,
     measurements: readMeasurements({ title: listing.title, description: listing.description }),
     redFlags: findRedFlags({ title: listing.title, description: listing.description }, ctx.redFlags.phrases),
+    color: readColorFacts(listing, ctx),
   };
+}
+
+function readColorFacts(listing: ListingForEvaluation, ctx: EngineContext): ColorReading & { names: string[] } {
+  const reading = readColors({ title: listing.title, colorAspect: colorAspectOf(listing) }, ctx.colors, ctx.colorIgnorePhrases);
+  return { ...reading, names: assessColors(reading.keys, ctx.colors).names };
 }
 
 /** Words that start generic sentences; anything else (e.g. brand names) keeps its capital. */
 const GENERIC_STARTERS = new Set([
   "Seller", "Size", "Condition", "Title", "Contains", "Can't", "Couldn't", "None", "No", "Listing", "Item", "Price",
-  "Brand", "Required", "Faux", "Fabric", "Neck", "Sleeve", "Numeric",
+  "Brand", "Required", "Faux", "Fabric", "Neck", "Sleeve", "Numeric", "Color", "Colors",
 ]);
 
 function lowerFirst(s: string): string {
@@ -253,6 +278,19 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
     add("material", "info", `Faux ${reading.fauxDetected.join(", ")} detected — not counted as genuine`);
   }
 
+  // --- Color ----------------------------------------------------------------------
+  // Global preferences. A color you excluded filters the listing out only when it's the
+  // only color found; with other colors too, the listing goes to review.
+  const col = assessColors(facts.color?.keys ?? [], ctx.colors);
+  const isAre = (n: number) => (n === 1 ? "Color is" : "Colors are");
+  if (col.excluded.length && !col.allowed.length) {
+    add("color", "exclude", `${isAre(col.excluded.length)} ${colorList(col.excluded)}, which you excluded`);
+  } else if (col.excluded.length) {
+    add("color", "review", `Colors are ${colorList(col.names)}; you excluded ${colorList(col.excluded)}`);
+  }
+  if (col.preferred.length) add("color", "pass", `${isAre(col.preferred.length)} ${colorList(col.preferred)}, which you prefer`);
+  if (col.avoided.length) add("color", "info", `${isAre(col.avoided.length)} ${colorList(col.avoided)}, which you generally avoid; ranked lower`);
+
   // --- Keywords -------------------------------------------------------------------
   const titleNorm = normalizePhrase(listing.title);
   for (const kw of s.excludeKeywords) {
@@ -280,7 +318,7 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
   return { profileId: profile.id, profileName: profile.name, state, reasons, summary: summarize(state, reasons) };
 }
 
-const DIMENSION_ORDER: Dimension[] = ["brand", "authenticity", "category", "size", "condition", "material", "keyword", "price"];
+const DIMENSION_ORDER: Dimension[] = ["brand", "authenticity", "category", "size", "condition", "material", "color", "keyword", "price"];
 
 function summarize(state: MatchState, reasons: Reason[]): string {
   const ordered = [...reasons].sort((a, b) => DIMENSION_ORDER.indexOf(a.dimension) - DIMENSION_ORDER.indexOf(b.dimension));
@@ -302,8 +340,12 @@ function summarize(state: MatchState, reasons: Reason[]): string {
   else text += " your preferences";
   text += ".";
   if (material) text += ` ${upperFirst(trimPeriod(material.message))}.`;
+  const preferredColor = ordered.find((r) => r.dimension === "color" && r.effect === "pass");
+  if (preferredColor) text += ` ${upperFirst(trimPeriod(preferredColor.message))}.`;
   const avoided = ordered.find((r) => r.dimension === "material" && r.effect === "info" && /generally avoid/.test(r.message));
   if (avoided) text += ` Note: ${trimPeriod(avoided.message)}.`;
+  const avoidedColor = ordered.find((r) => r.dimension === "color" && r.effect === "info" && /generally avoid/.test(r.message));
+  if (avoidedColor) text += ` Note: ${lowerFirst(trimPeriod(avoidedColor.message))}.`;
   return text;
 }
 
@@ -321,5 +363,6 @@ export function evaluateListing(listing: ListingForEvaluation, ctx: EngineContex
     matchedProfileIds: profiles.filter((p) => p.state === "match").map((p) => p.profileId),
     reviewProfileIds: profiles.filter((p) => p.state === "review").map((p) => p.profileId),
     materialScore: facts.material.score,
+    colorScore: assessColors(facts.color?.keys ?? [], ctx.colors).score,
   };
 }

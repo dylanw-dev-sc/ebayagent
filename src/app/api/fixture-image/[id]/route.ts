@@ -52,6 +52,13 @@ function garment(kind: FixtureGarment, fill: string): string {
         <path fill="${shade(fill, -16)}" stroke="${stroke}" stroke-width="2" d="M146 84 Q200 102 254 84 L254 100 Q200 118 146 100 Z"/>
         <line x1="200" y1="100" x2="200" y2="426" stroke="${detail}" stroke-width="2.5" stroke-dasharray="3 3"/>
         <path fill="none" stroke="${detail}" stroke-width="2" d="M140 300 L176 290 M224 290 L260 300"/>`;
+    case "sweater":
+      return `<path ${common} d="M150 90 L104 104 L70 150 L52 330 L86 340 L114 200 L118 410 L282 410 L286 200 L314 340 L348 330 L330 150 L296 104 L250 90 Q240 116 200 118 Q160 116 150 90 Z"/>
+        <path fill="none" stroke="${detail}" stroke-width="2" d="M150 90 Q160 116 200 118 Q240 116 250 90 M157 97 Q167 126 200 128 Q233 126 243 97"/>
+        <rect x="118" y="390" width="164" height="24" rx="3" fill="${shade(fill, -12)}" stroke="${stroke}" stroke-width="2"/>
+        ${Array.from({ length: 19 }, (_, i) => `<line x1="${127 + i * 8}" y1="393" x2="${127 + i * 8}" y2="411" stroke="${detail}" stroke-width="1.2" opacity="0.6"/>`).join("")}
+        <path fill="${shade(fill, -12)}" stroke="${stroke}" stroke-width="2" d="M52 330 L86 340 L82 360 L48 350 Z"/>
+        <path fill="${shade(fill, -12)}" stroke="${stroke}" stroke-width="2" d="M348 330 L314 340 L318 360 L352 350 Z"/>`;
     default:
       return "";
   }

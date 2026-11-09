@@ -9,7 +9,7 @@ const posInt = (v: string | undefined) => {
 };
 
 const VIEWS: FeedView[] = ["matches", "review", "excluded", "all", "saved", "dismissed"];
-const SORTS: FeedSort[] = ["newest", "price_asc", "price_desc", "material"];
+const SORTS: FeedSort[] = ["newest", "price_asc", "price_desc", "material", "color"];
 const PRICING: PricingFilter[] = ["eligible", "over_ceiling", "needs_review"];
 
 export const PAGE_SIZE = 40;
@@ -25,6 +25,7 @@ export function parseFeedParams(sp: SearchParams, defaults: { view?: FeedView } 
     categoryId: posInt(first(sp.cat)),
     size: first(sp.size) || undefined,
     material: first(sp.mat) || undefined,
+    color: first(sp.color) || undefined,
     pricing: PRICING.includes(pricing) ? pricing : undefined,
     review: rev === "reviewed" || rev === "unreviewed" ? rev : undefined,
     profileId: posInt(first(sp.profile)),

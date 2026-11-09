@@ -2,10 +2,12 @@
 
 import {
   createCategoryAction,
+  createColorAction,
   createConditionAction,
   createGroupAction,
   createMaterialAction,
   updateCategoryAction,
+  updateColorAction,
   updateDefaultsAction,
   updateGroupAction,
   updateMaterialAction,
@@ -88,9 +90,10 @@ export function CategoryForm({ initial }: { initial?: CategoryValues }) {
       <fieldset className="md:col-span-6">
         <legend className="label">Your measurements — flat, in inches (optional)</legend>
         <p className="hint mb-2">
-          When a listing gives measurements (e.g. “pit to pit 23 in”), they settle unclear sizes: inside your ranges → match, outside → excluded. A listing whose size label
-          and measurements disagree goes to review. Leave blank to ignore.
+          When a listing states measurements (e.g. “pit to pit 23 in”), they settle unclear sizes like IT 54: inside your ranges → match, outside → excluded. If the size
+          label and the measurements disagree, the listing goes to review. Leave blank to ignore.
         </p>
+        <MeasureGuide />
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {MEASUREMENT_KEYS.map((key) => (
             <div key={key}>
@@ -112,6 +115,42 @@ export function CategoryForm({ initial }: { initial?: CategoryValues }) {
         <SubmitButton>{editing ? "Save category" : "Add category"}</SubmitButton>
       </div>
     </ActionForm>
+  );
+}
+
+/** How to take the measurements the ranges are compared with (sellers measure garments flat). */
+function MeasureGuide() {
+  return (
+    <details className="group mb-3 rounded-lg border border-line bg-canvas/60 px-3 py-2 text-[13px] text-ink-2">
+      <summary className="cursor-pointer font-medium text-ink select-none">How to measure</summary>
+      <div className="mt-2 space-y-2 leading-5">
+        <p>Use a garment of this kind that fits you well. Lay it flat on a table, buttoned or zipped, and smooth it out. Measure it flat: don&apos;t double anything.</p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <strong className="text-ink">Pit to pit</strong>: straight across the front, 1 inch below the armpits, from side seam to side seam. This matters most.
+          </li>
+          <li>
+            <strong className="text-ink">Length</strong>: down the back, from where the collar meets the body to the bottom hem. Sellers measure length slightly differently,
+            so allow about an inch either side.
+          </li>
+          <li>
+            <strong className="text-ink">Shoulders</strong>: across the back, from one shoulder seam to the other.
+          </li>
+          <li>
+            <strong className="text-ink">Sleeve</strong>: from the shoulder seam to the end of the cuff. (Sleeves measured &ldquo;from center back&rdquo; are a different
+            method; the app ignores those.)
+          </li>
+        </ul>
+        <p>
+          Turn each number into a range: about ½ inch either side for pit to pit and shoulders (22.5 → 22–23), about 1 inch for length and sleeve. Measure shirts, sweaters
+          and jackets separately: a jacket that fits measures bigger than a shirt that fits.
+        </p>
+        <p>
+          Dress shirts: the collar label usually shows neck and sleeve, e.g. &ldquo;16½ 34/35&rdquo; means a 16.5 in neck and 34–35 in sleeve. Enter those as accepted neck
+          sizes and sleeve lengths in the Button-Down Shirts category.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -200,6 +239,52 @@ export function MaterialCreateForm() {
       </label>
       <div className="flex items-end sm:col-span-2">
         <SubmitButton variant="secondary">Add material</SubmitButton>
+      </div>
+    </ActionForm>
+  );
+}
+
+export function ColorEditForm({ c }: { c: { id: number; name: string; keywords: string[] } }) {
+  return (
+    <ActionForm action={updateColorAction} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <input type="hidden" name="id" value={c.id} />
+      <label>
+        <span className="label">Name</span>
+        <input name="name" defaultValue={c.name} className="field" />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Words that name it (comma-separated)</span>
+        <input name="keywords" defaultValue={c.keywords.join(", ")} className="field" />
+      </label>
+      <div className="flex items-end sm:col-span-3">
+        <SubmitButton variant="secondary">Save color</SubmitButton>
+      </div>
+    </ActionForm>
+  );
+}
+
+export function ColorCreateForm() {
+  return (
+    <ActionForm action={createColorAction} resetOnSuccess className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+      <label className="sm:col-span-2">
+        <span className="label">Name</span>
+        <input name="name" required className="field" placeholder="e.g. Teal" />
+      </label>
+      <label>
+        <span className="label">Preference</span>
+        <select name="priority" className="field" defaultValue="neutral">
+          <option value="prefer">Prefer</option>
+          <option value="neutral">Neutral</option>
+          <option value="avoid">Generally avoid</option>
+          <option value="exclude">Exclude</option>
+        </select>
+      </label>
+      <label className="sm:col-span-3">
+        <span className="label">Words that name it</span>
+        <input name="keywords" className="field" placeholder="e.g. teal, petrol blue (defaults to the name)" />
+      </label>
+      <div className="flex items-end sm:col-span-6">
+        <SubmitButton variant="secondary">Add color</SubmitButton>
       </div>
     </ActionForm>
   );

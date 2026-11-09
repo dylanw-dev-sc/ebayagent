@@ -8,7 +8,7 @@
  * eBay URL and are labeled "Fixture" everywhere in the UI.
  */
 
-export type FixtureGarment = "tee" | "polo" | "shirt" | "jacket" | "blazer" | "coat";
+export type FixtureGarment = "tee" | "polo" | "shirt" | "jacket" | "blazer" | "coat" | "sweater";
 
 export type FixtureShipping = { type: "free" } | { type: "fixed"; cost: string } | { type: "calculated" } | { type: "none" };
 
@@ -28,8 +28,8 @@ export interface FixtureItem {
   /** Hours before the scan time that the item was "listed" (fixture timestamps are relative to each scan). */
   hoursAgo: number;
   auction?: boolean;
-  /** Item specifics returned only by the detail call (like eBay getItem). */
-  details?: { brand?: string; size?: string; sizeType?: string; material?: string; other?: Array<[string, string]> };
+  /** Item specifics returned only by the detail call (like eBay getItem). `color` is the "Color" item specific. */
+  details?: { brand?: string; size?: string; sizeType?: string; material?: string; color?: string; other?: Array<[string, string]> };
   /** Seller description, returned only by the detail call (like eBay getItem). */
   description?: string;
   /** Text printed on a care-label photo (rendered as an extra sample image; never read by the app). */
@@ -46,6 +46,7 @@ const CB = "57990"; // Men's Casual Button-Down Shirts
 const D = "57991"; // Men's Dress Shirts
 const J = "57988"; // Men's Coats, Jackets & Vests
 const S = "3001"; // Men's Suits & Suit Separates (blazers, sport coats)
+const K = "11484"; // Men's Sweaters
 
 const NWT = { conditionId: "1000", condition: "New with tags" };
 const NWOT = { conditionId: "1500", condition: "New without tags" };
@@ -114,6 +115,13 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   { id: "FX-318", batch: 1, title: "Boglioli Linen Blazer 44R Unstructured", ebayCategoryId: S, garment: "blazer", color: "#c8b994", price: "90.00", shipping: { type: "fixed", cost: "12.00" }, ...GOOD, hoursAgo: 36, auction: true, details: { brand: "Boglioli", size: "44R", material: "100% Linen" } },
   { id: "FX-319", batch: 1, title: "Barena Venezia Overshirt Jacket Size 54", ebayCategoryId: J, garment: "coat", color: "#6d5f4b", price: "135.00", shipping: { type: "fixed", cost: "11.00" }, ...FAIR, hoursAgo: 38, details: { brand: "Barena", size: "54", material: "100% Wool" } },
   { id: "FX-320", batch: 1, title: "Golden Bear Sportswear Varsity Jacket 44R Made in USA", ebayCategoryId: J, garment: "coat", color: "#1d3b2a", price: "210.00", shipping: { type: "fixed", cost: "14.00" }, ...EXC, hoursAgo: 40, details: { brand: "Golden Bear", size: "44R", material: "Wool / Leather" } },
+
+  // ---------------------------------------------------------------- Sweaters & knitwear
+  { id: "FX-601", batch: 1, title: "John Smedley Merino Wool Crew Neck Sweater Size L Charcoal", ebayCategoryId: K, garment: "sweater", color: "#3c3f44", price: "85.00", shipping: { type: "fixed", cost: "7.00" }, ...EXC, hoursAgo: 4, details: { brand: "John Smedley", size: "L", material: "100% Merino Wool", color: "Gray" }, description: "Pit to pit 21.5 in, length 26 in." },
+  { id: "FX-602", batch: 1, title: "Brunello Cucinelli Cashmere Cardigan XL Oatmeal", ebayCategoryId: K, garment: "sweater", color: "#cbbba0", price: "420.00", shipping: { type: "free" }, ...NWOT, hoursAgo: 9, details: { brand: "Brunello Cucinelli", size: "XL", material: "100% Cashmere", color: "Beige" } },
+  { id: "FX-603", batch: 1, title: "Kiton Cashmere Roll Neck Sweater Size 52 Navy", ebayCategoryId: K, garment: "sweater", color: "#202a44", price: "390.00", shipping: { type: "fixed", cost: "15.00" }, ...EXC, hoursAgo: 15, details: { brand: "Kiton", size: "52", material: "100% Cashmere", color: "Blue" } },
+  { id: "FX-604", batch: 1, title: "Officine Générale Wool Crewneck Sweater Size M Olive", ebayCategoryId: K, garment: "sweater", color: "#5b5e3c", price: "110.00", shipping: { type: "fixed", cost: "9.00" }, ...GOOD, hoursAgo: 20, details: { brand: "Officine Générale", size: "M", material: "100% Wool", color: "Green" } },
+  { id: "FX-605", batch: 1, title: "Drake's Lambswool Jumper Bottle Green XL", ebayCategoryId: K, garment: "sweater", color: "#234a35", price: "95.00", shipping: { type: "calculated" }, ...EXC, hoursAgo: 27, details: { brand: "Drake's", size: "XL", material: "Lambswool", color: "Green" } },
 
   // ---------------------------------------------------------------- Batch 2 (appear on the second fixture scan)
   { id: "FX-401", batch: 2, title: "Loro Piana Cashmere Bomber Jacket 44R", ebayCategoryId: J, garment: "coat", color: "#8b7d6b", price: "1250.00", shipping: { type: "free" }, ...EXC, hoursAgo: 2, details: { brand: "Loro Piana", size: "44R", material: "100% Cashmere" } },

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
   BuyingOption,
+  ColorPriority,
   ItemAspect,
   ListingSource,
   MatchState,
@@ -119,6 +120,16 @@ export const materials = sqliteTable("materials", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+/** Your color preferences (prefer / neutral / avoid / exclude), matched by keywords. */
+export const colors = sqliteTable("colors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  priority: text("priority").$type<ColorPriority>().notNull().default("neutral"),
+  keywords: jsonList("keywords"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 export const conditions = sqliteTable("conditions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   key: text("key").notNull().unique(),
@@ -203,6 +214,10 @@ export const listingEvaluations = sqliteTable(
     materialLevel: text("material_level").notNull(),
     materialSummary: text("material_summary").notNull(),
     materialScore: real("material_score").notNull().default(0),
+    colorKeys: jsonList("color_keys"),
+    /** e.g. "Navy, White" (null when no color was found). */
+    colorSummary: text("color_summary"),
+    colorScore: real("color_score").notNull().default(0),
     conditionKey: text("condition_key"),
     conditionLabel: text("condition_label"),
     matchedProfileIds: text("matched_profile_ids", { mode: "json" }).$type<number[]>().notNull().default(sql`'[]'`),

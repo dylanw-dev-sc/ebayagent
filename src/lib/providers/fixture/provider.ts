@@ -107,6 +107,7 @@ export class FixtureProvider implements ListingProvider {
       if (d.size) aspects.push({ name: "Size", value: d.size });
       if (d.sizeType) aspects.push({ name: "Size Type", value: d.sizeType });
       if (d.material) aspects.push({ name: "Material", value: d.material });
+      if (d.color) aspects.push({ name: "Color", value: d.color });
       for (const [name, value] of d.other ?? []) aspects.push({ name, value });
     }
     const size = withDetails && d?.size ? composeSize(d.size, d.sizeType ?? null) : null;

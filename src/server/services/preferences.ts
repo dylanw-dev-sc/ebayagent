@@ -1,5 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
-import type { MaterialPriority, SizeSystem } from "../../lib/domain/types";
+import type { ColorPriority, MaterialPriority, SizeSystem } from "../../lib/domain/types";
 import { MEASUREMENT_KEYS, MEASUREMENT_LABEL, type MeasurementRanges } from "../../lib/matching/measurements";
 import { parseSizeText } from "../../lib/matching/size";
 import { normalizePhrase, uniq } from "../../lib/text";
@@ -316,6 +316,53 @@ export function updateMaterial(db: AppDb, id: number, patch: Partial<MaterialInp
 
 export function deleteMaterial(db: AppDb, id: number): void {
   db.delete(s.materials).where(eq(s.materials.id, id)).run();
+  refreshDerivedData(db);
+}
+
+// --- Colors -----------------------------------------------------------------------------------
+
+const COLOR_PRIORITIES: ColorPriority[] = ["prefer", "neutral", "avoid", "exclude"];
+
+export interface ColorInput {
+  name: string;
+  priority?: ColorPriority;
+  /** Words that name this color in titles and the "Color" item specific. */
+  keywords?: string[];
+}
+
+export function createColor(db: AppDb, input: ColorInput): number {
+  const name = input.name.trim();
+  if (!name) throw new ValidationError("Color name is required.");
+  const key = normalizePhrase(name).replace(/\s+/g, "_");
+  if (!key) throw new ValidationError("A color name needs letters or numbers.");
+  if (db.select().from(s.colors).where(eq(s.colors.key, key)).get()) throw new ValidationError(`A color named “${name}” already exists.`);
+  const priority = input.priority ?? "neutral";
+  if (!COLOR_PRIORITIES.includes(priority)) throw new ValidationError("Unknown color preference.");
+  const keywords = clean(input.keywords?.length ? input.keywords : [name]);
+  const max = db.select().from(s.colors).all().reduce((m, x) => Math.max(m, x.sortOrder), 0);
+  const id = db.insert(s.colors).values({ key, name, priority, keywords, sortOrder: max + 1 }).returning({ id: s.colors.id }).get().id;
+  refreshDerivedData(db);
+  return id;
+}
+
+export function updateColor(db: AppDb, id: number, patch: Partial<ColorInput>): void {
+  const set: Partial<typeof s.colors.$inferInsert> = {};
+  if (patch.name !== undefined) set.name = patch.name.trim() || "Color";
+  if (patch.priority !== undefined) {
+    if (!COLOR_PRIORITIES.includes(patch.priority)) throw new ValidationError("Unknown color preference.");
+    set.priority = patch.priority;
+  }
+  if (patch.keywords !== undefined) {
+    const keywords = clean(patch.keywords);
+    if (!keywords.length) throw new ValidationError("Enter at least one word that names this color.");
+    set.keywords = keywords;
+  }
+  if (Object.keys(set).length) db.update(s.colors).set(set).where(eq(s.colors.id, id)).run();
+  refreshDerivedData(db);
+}
+
+export function deleteColor(db: AppDb, id: number): void {
+  db.delete(s.colors).where(eq(s.colors.id, id)).run();
   refreshDerivedData(db);
 }
 

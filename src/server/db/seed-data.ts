@@ -112,7 +112,8 @@ interface SeedCategory {
  * (Nov 2026): 15687 Men's T-Shirts, 185101 Men's Polos, 57990 Men's Casual
  * Button-Down Shirts, 57991 Men's Dress Shirts, 57988 Men's Coats, Jackets &
  * Vests, 3001 Men's Suits & Suit Separates (blazers/sport coats were merged
- * into 3001 when 3002 was retired). All are editable in Preferences.
+ * into 3001 when 3002 was retired), 11484 Men's Sweaters. All are editable
+ * in Preferences.
  */
 export const seedCategories: SeedCategory[] = [
   {
@@ -153,6 +154,19 @@ export const seedCategories: SeedCategory[] = [
     titleKeywords: ["jacket", "blazer", "sport coat", "sportcoat", "coat", "overcoat", "topcoat", "parka", "bomber", "harrington", "gilet", "field jacket"],
     excludeKeywords: ["trousers", "pants", "2 piece suit", "two piece suit", "3 piece suit", "three piece suit", "suit trousers"],
     sortOrder: 3,
+  },
+  {
+    slug: "knitwear",
+    name: "Sweaters & Knitwear",
+    noun: "sweater",
+    description: "Crewnecks, V-necks, roll necks, cardigans and knit polos in eBay's Sweaters category. Italian/EU sizes (e.g. 52, 54) go to review.",
+    sizeSystem: "alpha",
+    acceptedSizes: ["L", "XL"],
+    reviewSizes: [],
+    ebayCategoryIds: ["11484"],
+    titleKeywords: ["sweater", "jumper", "cardigan", "pullover", "roll neck", "rollneck", "turtleneck", "knitwear", "knit polo", "knitted polo"],
+    excludeKeywords: [],
+    sortOrder: 4,
   },
 ];
 
@@ -229,14 +243,53 @@ export const seedMaterials: SeedMaterial[] = [
   { key: "vicuna", name: "Vicuña", kind: "fiber", priority: "neutral", keywords: ["vicuna"] },
 ];
 
-/** eBay condition IDs verified against eBay's condition-ID reference (apparel grades added 2024–2025). */
+export interface SeedColor {
+  key: string;
+  name: string;
+  keywords: string[];
+}
+
+/**
+ * Common menswear colors and the words sellers use for them. All start as
+ * Neutral: preferring or avoiding a color is your call. Ambiguous words are
+ * left out on purpose ("mint" as in "mint condition", "stone", "natural",
+ * "moss" as in "moss stitch", "gold" as in "gold buttons").
+ */
+export const seedColors: SeedColor[] = [
+  { key: "black", name: "Black", keywords: ["black", "jet black", "onyx"] },
+  { key: "white", name: "White", keywords: ["white", "optic white", "bright white"] },
+  { key: "cream", name: "Cream", keywords: ["cream", "off white", "offwhite", "ivory", "ecru", "oatmeal", "eggshell"] },
+  { key: "grey", name: "Grey", keywords: ["grey", "gray", "heather grey", "heather gray", "light grey", "light gray", "slate", "ash grey", "ash gray"] },
+  { key: "charcoal", name: "Charcoal", keywords: ["charcoal", "anthracite", "graphite", "dark grey", "dark gray"] },
+  { key: "navy", name: "Navy", keywords: ["navy", "navy blue", "midnight blue", "dark blue", "ink blue"] },
+  { key: "blue", name: "Blue", keywords: ["blue", "royal blue", "cobalt", "indigo", "mid blue"] },
+  { key: "light_blue", name: "Light blue", keywords: ["light blue", "sky blue", "pale blue", "powder blue", "baby blue", "french blue", "ice blue"] },
+  { key: "brown", name: "Brown", keywords: ["brown", "dark brown", "chocolate", "tobacco", "coffee", "espresso", "cognac", "chestnut", "walnut", "mocha"] },
+  { key: "beige", name: "Beige", keywords: ["beige", "tan", "taupe", "fawn", "light brown", "biscuit"] },
+  { key: "camel", name: "Camel", keywords: ["camel"] },
+  { key: "khaki", name: "Khaki", keywords: ["khaki"] },
+  { key: "olive", name: "Olive", keywords: ["olive", "olive green", "army green", "khaki green", "military green", "moss green"] },
+  { key: "green", name: "Green", keywords: ["green", "forest green", "bottle green", "hunter green", "dark green", "kelly green", "emerald", "sage", "sage green", "mint green"] },
+  { key: "burgundy", name: "Burgundy", keywords: ["burgundy", "wine", "maroon", "oxblood", "bordeaux", "claret", "cranberry"] },
+  { key: "red", name: "Red", keywords: ["red", "scarlet", "crimson", "cherry", "brick red"] },
+  { key: "pink", name: "Pink", keywords: ["pink", "salmon", "rose", "blush", "dusty pink", "fuchsia", "magenta"] },
+  { key: "purple", name: "Purple", keywords: ["purple", "lilac", "lavender", "violet", "plum", "mauve", "aubergine"] },
+  { key: "yellow", name: "Yellow", keywords: ["yellow", "mustard", "lemon", "ochre"] },
+  { key: "orange", name: "Orange", keywords: ["orange", "rust", "burnt orange", "terracotta", "coral"] },
+  { key: "multicolor", name: "Multicolor", keywords: ["multicolor", "multicolour", "multi color", "multi colour", "multicolored", "multicoloured"] },
+];
+
+/**
+ * eBay condition IDs verified against eBay's condition-ID reference (apparel grades added 2024–2025).
+ * "New with defects" and "Pre-owned – Fair" start out not accepted (your choice, Nov 2026).
+ */
 export const seedConditions = [
-  { key: "new_with_tags", name: "New with tags", ebayConditionIds: ["1000"], matchTerms: ["new with tags", "nwt", "brand new with tags"], sortOrder: 1 },
-  { key: "new_without_tags", name: "New without tags", ebayConditionIds: ["1500"], matchTerms: ["new without tags", "nwot", "new other"], sortOrder: 2 },
-  { key: "new_with_defects", name: "New with defects", ebayConditionIds: ["1750"], matchTerms: ["new with defects"], sortOrder: 3 },
-  { key: "preowned_excellent", name: "Pre-owned – Excellent", ebayConditionIds: ["2990"], matchTerms: ["pre owned excellent", "used excellent"], sortOrder: 4 },
-  { key: "preowned_good", name: "Pre-owned – Good", ebayConditionIds: ["3000"], matchTerms: ["pre owned good", "pre owned", "used"], sortOrder: 5 },
-  { key: "preowned_fair", name: "Pre-owned – Fair", ebayConditionIds: ["3010"], matchTerms: ["pre owned fair", "used fair"], sortOrder: 6 },
+  { key: "new_with_tags", name: "New with tags", ebayConditionIds: ["1000"], matchTerms: ["new with tags", "nwt", "brand new with tags"], accepted: true, sortOrder: 1 },
+  { key: "new_without_tags", name: "New without tags", ebayConditionIds: ["1500"], matchTerms: ["new without tags", "nwot", "new other"], accepted: true, sortOrder: 2 },
+  { key: "new_with_defects", name: "New with defects", ebayConditionIds: ["1750"], matchTerms: ["new with defects"], accepted: false, sortOrder: 3 },
+  { key: "preowned_excellent", name: "Pre-owned – Excellent", ebayConditionIds: ["2990"], matchTerms: ["pre owned excellent", "used excellent"], accepted: true, sortOrder: 4 },
+  { key: "preowned_good", name: "Pre-owned – Good", ebayConditionIds: ["3000"], matchTerms: ["pre owned good", "pre owned", "used"], accepted: true, sortOrder: 5 },
+  { key: "preowned_fair", name: "Pre-owned – Fair", ebayConditionIds: ["3010"], matchTerms: ["pre owned fair", "used fair"], accepted: false, sortOrder: 6 },
 ];
 
 export interface SeedProfile {

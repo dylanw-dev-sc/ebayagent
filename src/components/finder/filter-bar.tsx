@@ -10,10 +10,11 @@ export interface FacetOptions {
   categories: Array<{ id: number; name: string }>;
   sizes: string[];
   materials: Array<{ key: string; name: string }>;
+  colors: Array<{ key: string; name: string }>;
   profiles: Array<{ id: number; name: string }>;
 }
 
-const FILTER_KEYS = ["brand", "cat", "size", "mat", "price", "rev", "profile", "q"];
+const FILTER_KEYS = ["brand", "cat", "size", "mat", "color", "price", "rev", "profile", "q"];
 
 export function FilterBar({ facets, hide = [] }: { facets: FacetOptions; hide?: string[] }) {
   const router = useRouter();
@@ -97,6 +98,14 @@ export function FilterBar({ facets, hide = [] }: { facets: FacetOptions; hide?: 
           </option>
         ))}
       </select>
+      <select aria-label="Color" className={select} value={sp.get("color") ?? ""} onChange={(e) => set("color", e.target.value)}>
+        <option value="">Any color</option>
+        {facets.colors.map((c) => (
+          <option key={c.key} value={c.key}>
+            {c.name}
+          </option>
+        ))}
+      </select>
       {!hide.includes("price") ? (
         <select aria-label="Pricing eligibility" className={select} value={sp.get("price") ?? ""} onChange={(e) => set("price", e.target.value)}>
           <option value="">Any pricing</option>
@@ -151,7 +160,8 @@ export function SortSelect() {
         <option value="newest">Newly listed</option>
         <option value="price_asc">Lowest total price</option>
         <option value="price_desc">Highest total price</option>
-        <option value="material">Material preference</option>
+        <option value="material">Fabric preference</option>
+        <option value="color">Color preference</option>
       </select>
     </label>
   );

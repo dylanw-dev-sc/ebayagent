@@ -1,0 +1,286 @@
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
+import type { ListingSource, MatchState } from "../../lib/domain/types";
+import type { ListingFacts, Reason } from "../../lib/matching/engine";
+import type { AppDb } from "../db/client";
+import * as s from "../db/schema";
+import { loadScanSettings } from "./context";
+import { getPriceOverride } from "./pricing";
+
+export type FeedView = "matches" | "review" | "excluded" | "all" | "saved" | "dismissed";
+export type FeedSort = "newest" | "price_asc" | "price_desc" | "material";
+export type PricingFilter = "eligible" | "over_ceiling" | "needs_review";
+
+export interface FeedFilters {
+  view: FeedView;
+  brandId?: number;
+  categoryId?: number;
+  size?: string;
+  material?: string;
+  pricing?: PricingFilter;
+  review?: "unreviewed" | "reviewed";
+  profileId?: number;
+  q?: string;
+  sort: FeedSort;
+  page: number;
+  pageSize: number;
+}
+
+export interface FeedItem {
+  id: number;
+  source: ListingSource;
+  externalId: string;
+  title: string;
+  imageUrl: string | null;
+  itemUrl: string | null;
+  brandName: string | null;
+  brandStatus: string;
+  categoryName: string | null;
+  sizeLabel: string | null;
+  materialSummary: string;
+  materialLevel: string;
+  conditionLabel: string | null;
+  priceMinor: number | null;
+  currency: string | null;
+  shippingStatus: string;
+  shippingMinor: number | null;
+  totalMinor: number | null;
+  isAuction: boolean;
+  state: MatchState;
+  summary: string;
+  matchedProfileNames: string[];
+  reviewProfileNames: string[];
+  pricingStatus: "eligible" | "over_ceiling" | "needs_review" | null;
+  pricingExplanation: string | null;
+  maxPriceMinor: number | null;
+  saved: boolean;
+  dismissed: boolean;
+  reviewed: boolean;
+  listedAt: Date | null;
+  lastSeenAt: Date;
+  stale: boolean;
+}
+
+const VIEW_STATE: Partial<Record<FeedView, MatchState>> = { matches: "match", review: "review", excluded: "no_match" };
+
+function baseConditions(f: Omit<FeedFilters, "view" | "sort" | "page" | "pageSize">, source: ListingSource, view: FeedView): SQL[] {
+  const c: SQL[] = [eq(s.listings.source, source)];
+  const dismissed = sql`coalesce(${s.listingUserStates.dismissed}, 0)`;
+  const state = VIEW_STATE[view];
+  if (state) c.push(eq(s.listingEvaluations.state, state), sql`${dismissed} = 0`);
+  if (view === "all") c.push(sql`${dismissed} = 0`);
+  if (view === "saved") c.push(sql`coalesce(${s.listingUserStates.saved}, 0) = 1`);
+  if (view === "dismissed") c.push(sql`${dismissed} = 1`);
+  if (f.brandId) c.push(eq(s.listingEvaluations.brandId, f.brandId));
+  if (f.categoryId) c.push(eq(s.listingEvaluations.categoryId, f.categoryId));
+  if (f.size) c.push(sql`exists (select 1 from json_each(${s.listingEvaluations.sizeKeys}) where value = ${f.size})`);
+  if (f.material) c.push(sql`exists (select 1 from json_each(${s.listingEvaluations.materialKeys}) where value = ${f.material})`);
+  if (f.pricing) c.push(eq(s.pricingDecisions.status, f.pricing));
+  if (f.review === "reviewed") c.push(sql`coalesce(${s.listingUserStates.reviewed}, 0) = 1`);
+  if (f.review === "unreviewed") c.push(sql`coalesce(${s.listingUserStates.reviewed}, 0) = 0`);
+  if (f.profileId) {
+    c.push(
+      state
+        ? sql`exists (select 1 from ${s.listingProfileMatches} m where m.listing_id = ${s.listings.id} and m.profile_id = ${f.profileId} and m.state = ${state})`
+        : sql`exists (select 1 from ${s.listingProfileMatches} m where m.listing_id = ${s.listings.id} and m.profile_id = ${f.profileId})`,
+    );
+  }
+  if (f.q?.trim()) c.push(sql`${s.listings.title} like ${"%" + f.q.trim() + "%"}`);
+  return c;
+}
+
+function joined(db: AppDb) {
+  return db
+    .select({
+      l: s.listings,
+      e: s.listingEvaluations,
+      p: s.pricingDecisions,
+      u: s.listingUserStates,
+    })
+    .from(s.listings)
+    .innerJoin(s.listingEvaluations, eq(s.listingEvaluations.listingId, s.listings.id))
+    .leftJoin(s.pricingDecisions, eq(s.pricingDecisions.listingId, s.listings.id))
+    .leftJoin(s.listingUserStates, and(eq(s.listingUserStates.source, s.listings.source), eq(s.listingUserStates.externalId, s.listings.externalId)));
+}
+
+function countFor(db: AppDb, conds: SQL[]): number {
+  const row = db
+    .select({ n: sql<number>`count(*)` })
+    .from(s.listings)
+    .innerJoin(s.listingEvaluations, eq(s.listingEvaluations.listingId, s.listings.id))
+    .leftJoin(s.pricingDecisions, eq(s.pricingDecisions.listingId, s.listings.id))
+    .leftJoin(s.listingUserStates, and(eq(s.listingUserStates.source, s.listings.source), eq(s.listingUserStates.externalId, s.listings.externalId)))
+    .where(and(...conds))
+    .get();
+  return Number(row?.n ?? 0);
+}
+
+export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
+  const staleMs = loadScanSettings(db).staleAfterHours * 3_600_000;
+  const now = Date.now();
+  const brandNames = new Map(db.select({ id: s.brands.id, name: s.brands.name }).from(s.brands).all().map((b) => [b.id, b.name]));
+  const categoryNames = new Map(db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).all().map((c) => [c.id, c.name]));
+  const profileNames = new Map(db.select({ id: s.searchProfiles.id, name: s.searchProfiles.name }).from(s.searchProfiles).all().map((p) => [p.id, p.name]));
+
+  const conds = baseConditions(f, source, f.view);
+  const recency = sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`;
+  const totalOrItem = sql`coalesce(${s.pricingDecisions.totalMinor}, ${s.listings.priceMinor})`;
+  const unknownTotalLast = sql`case when ${s.pricingDecisions.totalMinor} is null then 1 else 0 end`;
+  const order =
+    f.sort === "price_asc"
+      ? [asc(unknownTotalLast), asc(totalOrItem), desc(recency)]
+      : f.sort === "price_desc"
+        ? [asc(unknownTotalLast), desc(totalOrItem), desc(recency)]
+        : f.sort === "material"
+          ? [desc(s.listingEvaluations.materialScore), desc(recency)]
+          : [desc(recency), desc(s.listings.id)];
+
+  const total = countFor(db, conds);
+  const rows = joined(db)
+    .where(and(...conds))
+    .orderBy(...order)
+    .limit(f.pageSize)
+    .offset(Math.max(0, f.page - 1) * f.pageSize)
+    .all();
+
+  const items: FeedItem[] = rows.map(({ l, e, p, u }) => ({
+    id: l.id,
+    source: l.source,
+    externalId: l.externalId,
+    title: l.title,
+    imageUrl: l.imageUrl,
+    itemUrl: l.itemUrl,
+    brandName: e.brandId !== null ? brandNames.get(e.brandId) ?? null : null,
+    brandStatus: e.brandStatus,
+    categoryName: e.categoryId !== null ? categoryNames.get(e.categoryId) ?? null : null,
+    sizeLabel: e.sizeLabel,
+    materialSummary: e.materialSummary,
+    materialLevel: e.materialLevel,
+    conditionLabel: e.conditionLabel,
+    priceMinor: l.priceMinor,
+    currency: l.currency,
+    shippingStatus: l.shippingStatus,
+    shippingMinor: l.shippingMinor,
+    totalMinor: p?.totalMinor ?? null,
+    isAuction: (l.buyingOptions ?? []).includes("AUCTION") && !(l.buyingOptions ?? []).includes("FIXED_PRICE"),
+    state: e.state,
+    summary: e.summary,
+    matchedProfileNames: e.matchedProfileIds.map((id) => profileNames.get(id)).filter((x): x is string => !!x),
+    reviewProfileNames: e.reviewProfileIds.map((id) => profileNames.get(id)).filter((x): x is string => !!x),
+    pricingStatus: p?.status ?? null,
+    pricingExplanation: p?.explanation ?? null,
+    maxPriceMinor: p?.maxPriceMinor ?? null,
+    saved: u?.saved ?? false,
+    dismissed: u?.dismissed ?? false,
+    reviewed: u?.reviewed ?? false,
+    listedAt: l.listedAt,
+    lastSeenAt: l.lastSeenAt,
+    stale: now - l.lastSeenAt.getTime() > staleMs,
+  }));
+
+  const nonView = { ...f };
+  const counts = {
+    matches: countFor(db, baseConditions(nonView, source, "matches")),
+    review: countFor(db, baseConditions(nonView, source, "review")),
+    excluded: countFor(db, baseConditions(nonView, source, "excluded")),
+    saved: countFor(db, baseConditions(nonView, source, "saved")),
+    dismissed: countFor(db, baseConditions(nonView, source, "dismissed")),
+  };
+
+  return { items, total, counts, page: f.page, pageSize: f.pageSize };
+}
+
+/** Values available for the filter controls (from evaluated listings of this source). */
+export function getFeedFacets(db: AppDb, source: ListingSource) {
+  const brandRows = db
+    .select({ id: s.listingEvaluations.brandId, n: sql<number>`count(*)` })
+    .from(s.listingEvaluations)
+    .innerJoin(s.listings, eq(s.listings.id, s.listingEvaluations.listingId))
+    .where(and(eq(s.listings.source, source), sql`${s.listingEvaluations.brandId} is not null`))
+    .groupBy(s.listingEvaluations.brandId)
+    .all();
+  const brands = new Map(db.select().from(s.brands).all().map((b) => [b.id, b.name]));
+  const sizes = db
+    .all<{ value: string; n: number }>(
+      sql`select j.value as value, count(*) as n from ${s.listingEvaluations} e join ${s.listings} l on l.id = e.listing_id, json_each(e.size_keys) j where l.source = ${source} group by j.value order by j.value`,
+    )
+    .map((r) => r.value);
+  const materialKeys = db
+    .all<{ value: string }>(
+      sql`select distinct j.value as value from ${s.listingEvaluations} e join ${s.listings} l on l.id = e.listing_id, json_each(e.material_keys) j where l.source = ${source}`,
+    )
+    .map((r) => r.value);
+  const materials = db.select({ key: s.materials.key, name: s.materials.name }).from(s.materials).all();
+  return {
+    brands: brandRows
+      .map((r) => ({ id: r.id as number, name: brands.get(r.id as number) ?? "Unknown", count: Number(r.n) }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    categories: db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder)).all(),
+    sizes,
+    materials: materials.filter((m) => materialKeys.includes(m.key)),
+    profiles: db.select({ id: s.searchProfiles.id, name: s.searchProfiles.name }).from(s.searchProfiles).orderBy(asc(s.searchProfiles.sortOrder)).all(),
+  };
+}
+
+export function getListingDetail(db: AppDb, id: number) {
+  const row = joined(db).where(eq(s.listings.id, id)).get();
+  if (!row) return null;
+  const { l, e, p, u } = row;
+  const profiles = db
+    .select({ m: s.listingProfileMatches, name: s.searchProfiles.name, enabled: s.searchProfiles.enabled })
+    .from(s.listingProfileMatches)
+    .innerJoin(s.searchProfiles, eq(s.searchProfiles.id, s.listingProfileMatches.profileId))
+    .where(eq(s.listingProfileMatches.listingId, id))
+    .orderBy(asc(s.searchProfiles.sortOrder))
+    .all()
+    .map((r) => ({ profileId: r.m.profileId, name: r.name, state: r.m.state, summary: r.m.summary, reasons: r.m.reasons as Reason[] }));
+  const staleMs = loadScanSettings(db).staleAfterHours * 3_600_000;
+  return {
+    listing: l,
+    evaluation: e,
+    facts: e.facts as ListingFacts,
+    brandName: e.brandId !== null ? db.select({ name: s.brands.name }).from(s.brands).where(eq(s.brands.id, e.brandId)).get()?.name ?? null : null,
+    categoryName: e.categoryId !== null ? db.select({ name: s.categories.name }).from(s.categories).where(eq(s.categories.id, e.categoryId)).get()?.name ?? null : null,
+    pricing: p,
+    userState: u,
+    override: getPriceOverride(db, l.source, l.externalId),
+    profiles,
+    stale: Date.now() - l.lastSeenAt.getTime() > staleMs,
+  };
+}
+
+/** Lists for the Cost Evaluator: eligible / over ceiling / needs pricing review. */
+export function getPricingList(db: AppDb, source: ListingSource, status: PricingFilter, opts: { onlyRelevant: boolean; limit: number }) {
+  const conds: SQL[] = [eq(s.listings.source, source), eq(s.pricingDecisions.status, status)];
+  if (opts.onlyRelevant) conds.push(sql`${s.listingEvaluations.state} in ('match', 'review')`);
+  const brandNames = new Map(db.select({ id: s.brands.id, name: s.brands.name }).from(s.brands).all().map((b) => [b.id, b.name]));
+  const categoryNames = new Map(db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).all().map((c) => [c.id, c.name]));
+  const rows = joined(db)
+    .where(and(...conds))
+    .orderBy(desc(sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`))
+    .limit(opts.limit)
+    .all();
+  const count = countFor(db, conds);
+  return {
+    count,
+    items: rows.map(({ l, e, p }) => ({
+      id: l.id,
+      title: l.title,
+      imageUrl: l.imageUrl,
+      source: l.source,
+      brandName: e.brandId !== null ? brandNames.get(e.brandId) ?? null : null,
+      categoryName: e.categoryId !== null ? categoryNames.get(e.categoryId) ?? null : null,
+      state: e.state,
+      priceMinor: l.priceMinor,
+      currency: l.currency,
+      shippingStatus: l.shippingStatus,
+      shippingMinor: l.shippingMinor,
+      totalMinor: p?.totalMinor ?? null,
+      maxPriceMinor: p?.maxPriceMinor ?? null,
+      referenceRetailMinor: p?.referenceRetailMinor ?? null,
+      allowedBps: p?.allowedBps ?? null,
+      ruleLevel: p?.ruleLevel ?? null,
+      reason: p?.reason ?? null,
+      explanation: p?.explanation ?? "",
+    })),
+  };
+}

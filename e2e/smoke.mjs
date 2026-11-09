@@ -10,7 +10,7 @@
  * Afterwards delete ./data/e2e.db.
  */
 import { chromium } from 'playwright';
-const BASE = process.argv[2] || 'http://localhost:3100';
+const BASE = process.argv[2] || 'http://localhost:3000';
 const results = [];
 const check = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`); };
 const tabCount = async (page, label) => {

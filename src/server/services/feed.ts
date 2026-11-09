@@ -20,6 +20,10 @@ export interface FeedFilters {
   review?: "unreviewed" | "reviewed";
   profileId?: number;
   q?: string;
+  /** Only listings first seen after `newSince`. */
+  newOnly?: boolean;
+  /** Listings first seen after this are "new since your last visit" (null = no badges). */
+  newSince?: Date | null;
   sort: FeedSort;
   page: number;
   pageSize: number;
@@ -58,6 +62,10 @@ export interface FeedItem {
   listedAt: Date | null;
   lastSeenAt: Date;
   stale: boolean;
+  /** Counterfeit red-flag phrases found (shown even when your policy only flags). */
+  redFlags: string[];
+  /** First seen since your last visit to the Finder. */
+  isNew: boolean;
 }
 
 const VIEW_STATE: Partial<Record<FeedView, MatchState>> = { matches: "match", review: "review", excluded: "no_match" };
@@ -94,7 +102,43 @@ function baseConditions(f: Omit<FeedFilters, "view" | "sort" | "page" | "pageSiz
     );
   }
   if (f.q?.trim()) c.push(sql`${s.listings.title} like ${"%" + f.q.trim() + "%"}`);
+  if (f.newOnly && f.newSince) c.push(sql`${s.listings.firstSeenAt} > ${f.newSince.getTime()}`);
   return c;
+}
+
+function feedOrder(f: Pick<FeedFilters, "sort">) {
+  const recency = sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`;
+  const totalOrItem = sql`coalesce(${s.pricingDecisions.totalMinor}, ${s.listings.priceMinor})`;
+  const unknownTotalLast = sql`case when ${s.pricingDecisions.totalMinor} is null then 1 else 0 end`;
+  return f.sort === "price_asc"
+    ? [asc(unknownTotalLast), asc(totalOrItem), desc(recency), desc(s.listings.id)]
+    : f.sort === "price_desc"
+      ? [asc(unknownTotalLast), desc(totalOrItem), desc(recency), desc(s.listings.id)]
+      : f.sort === "material"
+        ? [desc(s.listingEvaluations.materialScore), desc(recency), desc(s.listings.id)]
+        : [desc(recency), desc(s.listings.id)];
+}
+
+/**
+ * Previous / next listing in the current feed order (across pages), for
+ * stepping through listings in the detail view.
+ */
+export function getFeedNeighbors(db: AppDb, f: FeedFilters, source: ListingSource, listingId: number) {
+  const conds = baseConditions(f, source, f.view, listingWindowStart(db));
+  const ids = db
+    .select({ id: s.listings.id })
+    .from(s.listings)
+    .innerJoin(s.listingEvaluations, eq(s.listingEvaluations.listingId, s.listings.id))
+    .leftJoin(s.pricingDecisions, eq(s.pricingDecisions.listingId, s.listings.id))
+    .leftJoin(s.listingUserStates, and(eq(s.listingUserStates.source, s.listings.source), eq(s.listingUserStates.externalId, s.listings.externalId)))
+    .where(and(...conds))
+    .orderBy(...feedOrder(f))
+    .all()
+    .map((r) => r.id);
+  const i = ids.indexOf(listingId);
+  if (i < 0) return { index: null, total: ids.length, prev: null, next: null };
+  const at = (j: number) => (j >= 0 && j < ids.length ? { id: ids[j], page: Math.floor(j / f.pageSize) + 1 } : null);
+  return { index: i, total: ids.length, prev: at(i - 1), next: at(i + 1) };
 }
 
 function joined(db: AppDb) {
@@ -132,17 +176,7 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
 
   const windowStart = listingWindowStart(db);
   const conds = baseConditions(f, source, f.view, windowStart);
-  const recency = sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt})`;
-  const totalOrItem = sql`coalesce(${s.pricingDecisions.totalMinor}, ${s.listings.priceMinor})`;
-  const unknownTotalLast = sql`case when ${s.pricingDecisions.totalMinor} is null then 1 else 0 end`;
-  const order =
-    f.sort === "price_asc"
-      ? [asc(unknownTotalLast), asc(totalOrItem), desc(recency)]
-      : f.sort === "price_desc"
-        ? [asc(unknownTotalLast), desc(totalOrItem), desc(recency)]
-        : f.sort === "material"
-          ? [desc(s.listingEvaluations.materialScore), desc(recency)]
-          : [desc(recency), desc(s.listings.id)];
+  const order = feedOrder(f);
 
   const total = countFor(db, conds);
   const rows = joined(db)
@@ -185,6 +219,8 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
     listedAt: l.listedAt,
     lastSeenAt: l.lastSeenAt,
     stale: now - l.lastSeenAt.getTime() > staleMs,
+    redFlags: (e.facts as ListingFacts | null)?.redFlags ?? [],
+    isNew: !!f.newSince && l.firstSeenAt > f.newSince,
   }));
 
   const nonView = { ...f };
@@ -196,7 +232,9 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
     dismissed: countFor(db, baseConditions(nonView, source, "dismissed", windowStart)),
   };
 
-  return { items, total, counts, page: f.page, pageSize: f.pageSize, windowDays: loadScanSettings(db).maxListingAgeDays };
+  const newCount = f.newSince ? countFor(db, baseConditions({ ...f, newOnly: true }, source, f.view, windowStart)) : 0;
+
+  return { items, total, counts, newCount, page: f.page, pageSize: f.pageSize, windowDays: loadScanSettings(db).maxListingAgeDays };
 }
 
 /** Values available for the filter controls (from evaluated listings of this source). */

@@ -16,6 +16,7 @@ import { BrandForm } from "@/components/preferences/brand-form";
 import { CategoryForm, ConditionCreateForm, DefaultsForm, GroupForm, MaterialCreateForm, MaterialEditForm, ScanSettingsForm } from "@/components/preferences/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, cn } from "@/components/ui";
 import type { MaterialPriority } from "@/lib/domain/types";
+import { configuredKeys, describeRange, MEASUREMENT_LABEL } from "@/lib/matching/measurements";
 import { minorToInput } from "@/lib/money";
 import { loadBrands, loadCategories, loadConditions, loadDefaultsSetting, loadGroups, loadMaterials, loadScanSettings } from "@/server/services/context";
 import { requestDb } from "@/server/request";
@@ -181,6 +182,12 @@ async function PreferencesContent() {
                     Accepted: <strong className="font-semibold text-ink-2">{c.defaultSizes.accepted.join(", ") || "none"}</strong>
                     {c.defaultSizes.review.length ? <> · To review: {c.defaultSizes.review.join(", ")}</> : null}
                     {c.defaultSizes.neck.length ? <> · Neck: {c.defaultSizes.neck.join(", ")}</> : null}
+                    {" · "}Measurements:{" "}
+                    {configuredKeys(c.measurements).length
+                      ? configuredKeys(c.measurements)
+                          .map((k) => `${MEASUREMENT_LABEL[k]} ${describeRange(c.measurements![k]!)}`)
+                          .join(", ")
+                      : "not set"}
                     {" · "}eBay categories: {c.ebayCategoryIds.join(", ") || "none"}
                   </p>
                 </div>
@@ -203,6 +210,7 @@ async function PreferencesContent() {
                   ebayCategoryIds: c.ebayCategoryIds,
                   titleKeywords: c.titleKeywords,
                   excludeKeywords: c.excludeKeywords,
+                  measurementRanges: c.measurements,
                 }}
               />
               <div className="mt-3 flex justify-end">
@@ -299,7 +307,7 @@ async function PreferencesContent() {
 
       {/* Defaults */}
       <section className="space-y-4">
-        <SectionTitle id="defaults" title="Other defaults" />
+        <SectionTitle id="defaults" title="Other defaults" description="Unknown-fabric handling, excluded keywords, price limits and counterfeit red flags." />
         <div className="card p-5">
           <DefaultsForm
             d={{
@@ -307,6 +315,8 @@ async function PreferencesContent() {
               excludeKeywords: defaults.excludeKeywords,
               priceMin: minorToInput(defaults.priceMinMinor),
               priceMax: minorToInput(defaults.priceMaxMinor),
+              redFlagPhrases: defaults.redFlagPhrases,
+              redFlagPolicy: defaults.redFlagPolicy,
             }}
           />
         </div>

@@ -9,6 +9,7 @@ import type {
   ShippingStatus,
   SizeSystem,
 } from "../../lib/domain/types";
+import type { MeasurementRanges } from "../../lib/matching/measurements";
 import type { ProfileOverrides } from "../../lib/profiles/resolve";
 
 const createdAt = () =>
@@ -98,6 +99,8 @@ export const categories = sqliteTable("categories", {
   ebayCategoryIds: jsonList("ebay_category_ids"),
   titleKeywords: jsonList("title_keywords"),
   excludeKeywords: jsonList("exclude_keywords"),
+  /** Your flat garment measurement ranges in inches, e.g. {"chest":{"min":22,"max":23.5}}. */
+  measurementRanges: text("measurement_ranges", { mode: "json" }).$type<MeasurementRanges>().notNull().default(sql`'{}'`),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -342,6 +345,8 @@ export const scanRuns = sqliteTable("scan_runs", {
   purged: integer("purged").notNull().default(0),
   /** Listings returned by eBay but posted before the listing-age window (not stored). */
   skippedOld: integer("skipped_old").notNull().default(0),
+  /** Listings skipped because the seller's feedback was below your minimum (seller data is never stored). */
+  skippedSeller: integer("skipped_seller").notNull().default(0),
   errorCount: integer("error_count").notNull().default(0),
   errors: text("errors", { mode: "json" }).$type<ScanErrorEntry[]>().notNull().default(sql`'[]'`),
   rateLimited: integer("rate_limited", { mode: "boolean" }).notNull().default(false),

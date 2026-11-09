@@ -30,15 +30,27 @@ export function ListingCard({ item, detailHref, showReason, priority }: { item: 
           )}
         </Link>
         <div className="pointer-events-none absolute inset-x-2.5 top-2.5 flex items-start justify-between">
-          <Badge tone={STATE_TONE[item.state]} className="pointer-events-auto shadow-sm">
-            {STATE_LABEL[item.state]}
-          </Badge>
+          <span className="pointer-events-auto flex gap-1">
+            <Badge tone={STATE_TONE[item.state]} className="shadow-sm">
+              {STATE_LABEL[item.state]}
+            </Badge>
+            {item.isNew ? (
+              <Badge tone="ink" className="shadow-sm" title="First seen since your last visit">
+                New
+              </Badge>
+            ) : null}
+          </span>
           <div className="pointer-events-auto">
             <SaveButton listingId={item.id} initial={{ saved: item.saved, dismissed: item.dismissed, reviewed: item.reviewed }} />
           </div>
         </div>
         <div className="pointer-events-none absolute inset-x-2.5 bottom-2.5 flex flex-wrap gap-1">
           {isFixture ? <Badge tone="fixture" className="shadow-sm">Fixture</Badge> : null}
+          {item.redFlags.length ? (
+            <Badge tone="exclude" className="shadow-sm" title={`Counterfeit red flag: ${item.redFlags.join(", ")}`}>
+              Red flag
+            </Badge>
+          ) : null}
           {item.isAuction ? <Badge tone="ink" className="shadow-sm">Auction · current bid</Badge> : null}
           {item.stale ? (
             <Badge tone="review" className="shadow-sm" title="Listing data may be out of date; rescan to refresh.">

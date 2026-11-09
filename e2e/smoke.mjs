@@ -143,7 +143,9 @@ const tabCount = async (page, label) => {
   const dlg = page.getByRole('dialog');
   await dlg.locator('input[name=retail]').fill('60');
   await dlg.locator('input[name=percent]').fill('50');
-  await dlg.getByRole('button', { name: /Save override/ }).click(); await settle();
+  await dlg.getByRole('button', { name: /Save override/ }).click();
+  // The save refreshes the drawer without a page load; wait for the result to render.
+  await dlg.getByText('Product override').first().waitFor({ timeout: 15000 }).catch(() => {}); await settle();
   const dlgText = await page.getByRole('dialog').textContent();
   check('Product override takes precedence (max $30 → over ceiling)', dlgText.includes('Product override') && dlgText.includes('Over ceiling'), '');
   await page.keyboard.press('Escape'); await settle();

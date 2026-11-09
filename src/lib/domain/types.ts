@@ -51,6 +51,9 @@ export interface NormalizedListing {
   detailsFetched: boolean;
   /** Seller's description as plain text (from item details), truncated. Null when not fetched/provided. */
   description: string | null;
+  /** Seller feedback from search results — used transiently for your seller minimums, NEVER stored. */
+  sellerFeedbackScore?: number | null;
+  sellerFeedbackPercent?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +104,8 @@ export interface CategoryConfig {
   titleKeywords: string[];
   /** Title phrases that exclude a listing from this category (e.g. "trousers" for jackets). */
   excludeKeywords: string[];
+  /** Your fit ranges for flat garment measurements, in inches (personal; not overridden per profile). */
+  measurements?: import("../matching/measurements").MeasurementRanges;
 }
 
 export interface MaterialConfig {

@@ -137,6 +137,8 @@ export class FixtureProvider implements ListingProvider {
       originAt: listedAt,
       detailsFetched: withDetails,
       description: withDetails ? item.description ?? null : null,
+      sellerFeedbackScore: item.seller?.score ?? null,
+      sellerFeedbackPercent: item.seller?.percent ?? null,
     };
   }
 

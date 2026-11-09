@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { deleteRuleAction, toggleRuleAction } from "@/app/actions/pricing";
 import { RuleForm } from "@/components/cost/rule-form";
+import { CsvImportForm, RuleGrid, type GridValue } from "@/components/cost/rule-grid";
 import { ExpandableRow } from "@/components/expandable-row";
 import { ActionButton, Toggle } from "@/components/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, TabLink, cn } from "@/components/ui";
@@ -48,8 +49,16 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
   const list = (LISTS.find((l) => l.key === sp.list)?.key ?? "eligible") as PricingFilter;
   const includeAll = sp.scope === "all";
   const rules = listPricingRules(db);
-  const categories = loadCategories(db).map((c) => ({ id: c.id, name: c.name }));
-  const brands = loadBrands(db).map((b) => ({ id: b.id, name: b.name }));
+  const categoryRows = loadCategories(db);
+  const brandRows = loadBrands(db);
+  const categories = categoryRows.map((c) => ({ id: c.id, name: c.name }));
+  const brands = brandRows.map((b) => ({ id: b.id, name: b.name }));
+  const enabledCategoryIds = new Set(categoryRows.filter((c) => c.enabled).map((c) => c.id));
+  const enabledBrandIds = new Set(brandRows.filter((b) => b.enabled).map((b) => b.id));
+  const gridMode = sp.rules === "grid";
+  const gridCells: Record<string, GridValue> = Object.fromEntries(
+    rules.map((r) => [`${r.categoryId}_${r.brandId ?? "all"}`, { retail: minorToInput(r.referenceRetailMinor), percent: formatBps(r.allowedBps).replace("%", ""), active: r.active }]),
+  );
   const lists = Object.fromEntries(LISTS.map((l) => [l.key, getPricingList(db, source, l.key, { onlyRelevant: !includeAll, limit: l.key === list ? 200 : 0 })])) as Record<
     PricingFilter,
     ReturnType<typeof getPricingList>
@@ -59,6 +68,7 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
     const p = new URLSearchParams();
     if (sp.list && typeof sp.list === "string") p.set("list", sp.list);
     if (sp.scope && typeof sp.scope === "string") p.set("scope", sp.scope);
+    if (sp.rules && typeof sp.rules === "string") p.set("rules", sp.rules);
     for (const [k, v] of Object.entries(patch)) {
       if (v) p.set(k, v);
       else p.delete(k);
@@ -90,6 +100,30 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
             </>
           }
         />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-full border border-line bg-surface p-0.5 text-[13px] font-medium">
+            <Link href={qs({ rules: null })} scroll={false} className={cn("rounded-full px-3 py-1", !gridMode ? "bg-ink text-white" : "text-ink-2 hover:text-ink")}>
+              Rules list
+            </Link>
+            <Link href={qs({ rules: "grid" })} scroll={false} className={cn("rounded-full px-3 py-1", gridMode ? "bg-ink text-white" : "text-ink-2 hover:text-ink")}>
+              Brand × category grid
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[13px] font-medium">
+            <a href="/api/pricing-rules" className="text-ink-2 underline-offset-4 hover:text-ink hover:underline">
+              Download rules (CSV)
+            </a>
+            <a href="/api/pricing-rules?template=1" className="text-ink-2 underline-offset-4 hover:text-ink hover:underline">
+              Download fill-in template
+            </a>
+          </div>
+        </div>
+        <div className="card p-4">
+          <CsvImportForm />
+        </div>
+        {gridMode ? (
+          <RuleGrid categories={categories.filter((c) => enabledCategoryIds.has(c.id))} brands={brands.filter((b) => enabledBrandIds.has(b.id))} cells={gridCells} />
+        ) : (
         <div className="card overflow-hidden">
           {rules.length ? (
             <div className="overflow-x-auto">
@@ -166,6 +200,7 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
             <RuleForm mode="create" categories={categories} brands={brands} />
           </div>
         </div>
+        )}
       </section>
 
       <section className="space-y-4">

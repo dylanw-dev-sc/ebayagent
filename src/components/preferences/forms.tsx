@@ -12,9 +12,11 @@ import {
   updateScanSettingsAction,
 } from "@/app/actions/preferences";
 import type { SizeSystem } from "@/lib/domain/types";
+import { MEASUREMENT_KEYS, MEASUREMENT_LABEL, type MeasurementRanges } from "@/lib/matching/measurements";
 import { ActionForm, SubmitButton } from "../forms";
 
 export interface CategoryValues {
+  measurementRanges?: MeasurementRanges;
   id?: number;
   name?: string;
   noun?: string;
@@ -83,6 +85,25 @@ export function CategoryForm({ initial }: { initial?: CategoryValues }) {
         <span className="label">Exclude titles containing</span>
         <input name="excludeKeywords" defaultValue={join(initial?.excludeKeywords)} className="field" placeholder="e.g. trousers" />
       </label>
+      <fieldset className="md:col-span-6">
+        <legend className="label">Your measurements — flat, in inches (optional)</legend>
+        <p className="hint mb-2">
+          When a listing gives measurements (e.g. “pit to pit 23 in”), they settle unclear sizes: inside your ranges → match, outside → excluded. A listing whose size label
+          and measurements disagree goes to review. Leave blank to ignore.
+        </p>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {MEASUREMENT_KEYS.map((key) => (
+            <div key={key}>
+              <span className="label capitalize">{MEASUREMENT_LABEL[key]}</span>
+              <div className="flex items-center gap-1.5">
+                <input name={`m_${key}_min`} inputMode="decimal" defaultValue={initial?.measurementRanges?.[key]?.min ?? ""} placeholder="min" aria-label={`${MEASUREMENT_LABEL[key]} minimum`} className="field tabular" />
+                <span className="text-ink-3">–</span>
+                <input name={`m_${key}_max`} inputMode="decimal" defaultValue={initial?.measurementRanges?.[key]?.max ?? ""} placeholder="max" aria-label={`${MEASUREMENT_LABEL[key]} maximum`} className="field tabular" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </fieldset>
       <label className="md:col-span-6">
         <span className="label">Description</span>
         <input name="description" defaultValue={initial?.description ?? ""} className="field" />
@@ -204,7 +225,11 @@ export function ConditionCreateForm() {
   );
 }
 
-export function DefaultsForm({ d }: { d: { unknownMaterialPolicy: string; excludeKeywords: string[]; priceMin: string; priceMax: string } }) {
+export function DefaultsForm({
+  d,
+}: {
+  d: { unknownMaterialPolicy: string; excludeKeywords: string[]; priceMin: string; priceMax: string; redFlagPhrases: string[]; redFlagPolicy: string };
+}) {
   return (
     <ActionForm action={updateDefaultsAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <fieldset>
@@ -233,6 +258,26 @@ export function DefaultsForm({ d }: { d: { unknownMaterialPolicy: string; exclud
         <input name="priceMax" inputMode="decimal" defaultValue={d.priceMax} className="field tabular" placeholder="No maximum" />
         <span className="hint">A simple search filter. Ceilings based on retail live in the Cost Evaluator.</span>
       </label>
+      <label className="md:col-span-2">
+        <span className="label">Counterfeit red flags (title or description)</span>
+        <textarea name="redFlagPhrases" rows={2} defaultValue={d.redFlagPhrases.join(", ")} className="field" />
+        <span className="hint">Comma-separated. Negated mentions such as “not a replica” or “no fakes” are ignored.</span>
+      </label>
+      <fieldset className="md:col-span-2">
+        <legend className="label">When a red flag appears</legend>
+        <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+          {[
+            ["exclude", "Exclude the listing (recommended)"],
+            ["review", "Send to Needs review"],
+            ["flag", "Just show a warning"],
+          ].map(([value, label]) => (
+            <label key={value} className="flex items-center gap-2 text-sm text-ink-2">
+              <input type="radio" name="redFlagPolicy" value={value} defaultChecked={d.redFlagPolicy === value} className="accent-ink" />
+              {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="md:col-span-2">
         <SubmitButton>Save defaults</SubmitButton>
       </div>
@@ -241,6 +286,8 @@ export function DefaultsForm({ d }: { d: { unknownMaterialPolicy: string; exclud
 }
 
 export interface ScanSettingsValues {
+  minSellerFeedbackScore: number | null;
+  minSellerFeedbackPercent: number | null;
   maxListingAgeDays: number;
   pageSize: number;
   maxPagesPerQuery: number;
@@ -255,7 +302,7 @@ export interface ScanSettingsValues {
 }
 
 export function ScanSettingsForm({ s }: { s: ScanSettingsValues }) {
-  const num = (name: keyof ScanSettingsValues, label: string, hint: string) => (
+  const num = (name: Exclude<keyof ScanSettingsValues, "includeAuctions" | "deliveryCountry" | "minSellerFeedbackScore" | "minSellerFeedbackPercent">, label: string, hint: string) => (
     <label>
       <span className="label">{label}</span>
       <input name={name} inputMode="numeric" defaultValue={String(s[name])} className="field tabular" />
@@ -277,6 +324,16 @@ export function ScanSettingsForm({ s }: { s: ScanSettingsValues }) {
         <span className="label">Deliver-to country</span>
         <input name="deliveryCountry" defaultValue={s.deliveryCountry} className="field uppercase" maxLength={2} />
         <span className="hint">Only listings that ship here (blank = any)</span>
+      </label>
+      <label>
+        <span className="label">Minimum seller feedback score</span>
+        <input name="minSellerFeedbackScore" inputMode="numeric" defaultValue={s.minSellerFeedbackScore ?? ""} placeholder="off" className="field tabular" />
+        <span className="hint">Applied while scanning; seller details are never stored</span>
+      </label>
+      <label>
+        <span className="label">Minimum positive feedback (%)</span>
+        <input name="minSellerFeedbackPercent" inputMode="decimal" defaultValue={s.minSellerFeedbackPercent ?? ""} placeholder="off" className="field tabular" />
+        <span className="hint">e.g. 98. Listings without seller info aren&apos;t affected</span>
       </label>
       <label className="flex items-center gap-2 text-sm text-ink-2 sm:col-span-2 lg:col-span-3">
         <input type="checkbox" name="includeAuctions" defaultChecked={s.includeAuctions} className="size-4 accent-ink" />

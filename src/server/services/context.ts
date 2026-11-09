@@ -54,6 +54,7 @@ export function loadCategories(db: AppDb): Array<CategoryConfig & { description:
       ebayCategoryIds: c.ebayCategoryIds,
       titleKeywords: c.titleKeywords,
       excludeKeywords: c.excludeKeywords,
+      measurements: c.measurementRanges ?? {},
       sortOrder: c.sortOrder,
     }));
 }
@@ -189,7 +190,9 @@ export function loadEngineContext(db: AppDb): LoadedContext {
     enabled: p.enabled,
     settings: p.resolved.settings,
   }));
-  const engine = buildEngineContext({ brands, categories, materials, conditions, profiles: evalProfiles });
+  const d = loadDefaultsSetting(db);
+  const redFlags = { phrases: d.redFlagPhrases, policy: d.redFlagPolicy };
+  const engine = buildEngineContext({ brands, categories, materials, conditions, profiles: evalProfiles, redFlags });
   const rulesHash = createHash("sha1")
     .update(
       JSON.stringify({
@@ -199,6 +202,7 @@ export function loadEngineContext(db: AppDb): LoadedContext {
         materials: materials.map(({ notes, sortOrder, ...m }) => m),
         conditions,
         profiles: evalProfiles,
+        redFlags,
       }),
     )
     .digest("hex");

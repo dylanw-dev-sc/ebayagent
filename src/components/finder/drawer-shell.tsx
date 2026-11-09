@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 /** Right-hand detail panel. URL-driven (?listing=id) so it survives refreshes and is shareable. */
-export function DrawerShell({ closeHref, children, label }: { closeHref: string; children: ReactNode; label: string }) {
+export function DrawerShell({ closeHref, children, label, nav }: { closeHref: string; children: ReactNode; label: string; nav?: ReactNode }) {
   const router = useRouter();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -27,9 +27,12 @@ export function DrawerShell({ closeHref, children, label }: { closeHref: string;
       <div className="absolute inset-y-0 right-0 flex w-full max-w-[760px] flex-col overflow-hidden bg-canvas shadow-[var(--shadow-panel)]">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-5">
           <p className="eyebrow">Listing details</p>
-          <Link href={closeHref} scroll={false} className="grid size-9 place-items-center rounded-full text-ink-2 hover:bg-muted hover:text-ink" aria-label="Close">
-            <X className="size-5" />
-          </Link>
+          <div className="flex items-center gap-2">
+            {nav}
+            <Link href={closeHref} scroll={false} className="grid size-9 place-items-center rounded-full text-ink-2 hover:bg-muted hover:text-ink" aria-label="Close">
+              <X className="size-5" />
+            </Link>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>

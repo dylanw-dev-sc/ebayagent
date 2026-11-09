@@ -12,6 +12,8 @@ import { containsPhrase, normalizePhrase } from "../text";
 import { compileBrandMatcher, detectBrand, type BrandDetection, type BrandMatcher } from "./brand";
 import { resolveCategory, resolveCondition, type CategoryResolution, type ConditionResolution } from "./category";
 import { assessMaterials, PRIORITY_LABEL, readMaterials, type MaterialAssessment, type MaterialReading } from "./material";
+import { combineSizeAndMeasurements, judgeMeasurements, readMeasurements, type MeasurementReading } from "./measurements";
+import { DEFAULT_RED_FLAG_PHRASES, findRedFlags, type RedFlagPolicy } from "./red-flags";
 import { evaluateSize, readListingSize, type SizeReading } from "./size";
 
 /**
@@ -23,7 +25,7 @@ import { evaluateSize, readListingSize, type SizeReading } from "./size";
  */
 
 export type ReasonEffect = "pass" | "review" | "exclude" | "info";
-export type Dimension = "brand" | "category" | "size" | "condition" | "material" | "keyword" | "price";
+export type Dimension = "brand" | "authenticity" | "category" | "size" | "condition" | "material" | "keyword" | "price";
 
 export interface Reason {
   dimension: Dimension;
@@ -46,6 +48,9 @@ export interface ListingFacts {
   materialReading: MaterialReading;
   material: MaterialAssessment;
   condition: ConditionResolution;
+  measurements: MeasurementReading;
+  /** Counterfeit red-flag phrases found in the title or description. */
+  redFlags: string[];
 }
 
 export interface ListingEvaluation {
@@ -67,11 +72,16 @@ export interface EngineContext {
   profiles: ProfileForEvaluation[];
   /** Material keys excluded globally (priority "exclude") — used for ranking display. */
   globalExcludedMaterialKeys: string[];
+  /** Counterfeit red-flag phrases and what to do when one appears. */
+  redFlags: { phrases: string[]; policy: RedFlagPolicy };
 }
 
-export function buildEngineContext(input: Omit<EngineContext, "matcher" | "globalExcludedMaterialKeys">): EngineContext {
+export function buildEngineContext(
+  input: Omit<EngineContext, "matcher" | "globalExcludedMaterialKeys" | "redFlags"> & { redFlags?: EngineContext["redFlags"] },
+): EngineContext {
   return {
     ...input,
+    redFlags: input.redFlags ?? { phrases: DEFAULT_RED_FLAG_PHRASES, policy: "exclude" },
     matcher: compileBrandMatcher(input.brands),
     globalExcludedMaterialKeys: input.materials.filter((m) => m.priority === "exclude").map((m) => m.key),
   };
@@ -104,6 +114,8 @@ export function extractFacts(listing: ListingForEvaluation, ctx: EngineContext):
     materialReading,
     material,
     condition,
+    measurements: readMeasurements({ title: listing.title, description: listing.description }),
+    redFlags: findRedFlags({ title: listing.title, description: listing.description }, ctx.redFlags.phrases),
   };
 }
 
@@ -155,6 +167,12 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
     }
   }
 
+  // --- Counterfeit red flags --------------------------------------------------------
+  if (facts.redFlags.length) {
+    const effect: ReasonEffect = ctx.redFlags.policy === "exclude" ? "exclude" : ctx.redFlags.policy === "review" ? "review" : "info";
+    add("authenticity", effect, `Contains “${facts.redFlags[0]}”${facts.redFlags.length > 1 ? ` (and ${facts.redFlags.length - 1} more)` : ""}, a counterfeit red flag`);
+  }
+
   // --- Category + size ------------------------------------------------------------
   const c = facts.category;
   const cat = c.categoryId !== null ? ctx.categories.find((x) => x.id === c.categoryId) : undefined;
@@ -170,7 +188,9 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
       if (k && containsPhrase(titleNormForCategory, k)) add("category", "exclude", `Title contains “${kw}”, which is excluded for ${cat.name}`);
     }
     const prefs = s.sizes[cat.id] ?? cat.defaultSizes;
-    const sz = evaluateSize(facts.size, prefs, cat.sizeSystem, cat.noun);
+    const label = evaluateSize(facts.size, prefs, cat.sizeSystem, cat.noun);
+    // Your measurement ranges settle uncertain size labels; contradictions go to review.
+    const sz = combineSizeAndMeasurements(label, judgeMeasurements(facts.measurements, cat.measurements), cat.noun);
     add("size", sz.state === "match" ? "pass" : sz.state === "review" ? "review" : "exclude", sz.message);
   }
 
@@ -260,7 +280,7 @@ export function evaluateForProfile(listing: ListingForEvaluation, facts: Listing
   return { profileId: profile.id, profileName: profile.name, state, reasons, summary: summarize(state, reasons) };
 }
 
-const DIMENSION_ORDER: Dimension[] = ["brand", "category", "size", "condition", "material", "keyword", "price"];
+const DIMENSION_ORDER: Dimension[] = ["brand", "authenticity", "category", "size", "condition", "material", "keyword", "price"];
 
 function summarize(state: MatchState, reasons: Reason[]): string {
   const ordered = [...reasons].sort((a, b) => DIMENSION_ORDER.indexOf(a.dimension) - DIMENSION_ORDER.indexOf(b.dimension));

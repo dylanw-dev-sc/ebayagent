@@ -21,6 +21,7 @@ export function PhotoGallery({ images, alt, labelHint }: { images: string[]; alt
   return (
     <div className="space-y-2">
       <div
+        data-gallery
         className="relative aspect-[4/5] overflow-hidden rounded-xl bg-muted ring-1 ring-line focus-visible:outline-2"
         tabIndex={images.length > 1 ? 0 : -1}
         aria-label={`Photos: ${i + 1} of ${images.length}. Use the arrow keys to browse.`}

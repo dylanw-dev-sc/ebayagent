@@ -15,6 +15,13 @@
       "when": 1794198711240,
       "tag": "0001_listing_window_and_description",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794200384025,
+      "tag": "0002_measurements_and_seller_filter",
+      "breakpoints": true
     }
   ]
 }

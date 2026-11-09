@@ -1,6 +1,8 @@
 "use server";
 
 import type { MaterialPriority, SizeSystem, UnknownMaterialPolicy } from "@/lib/domain/types";
+import { MEASUREMENT_KEYS, type MeasurementRanges } from "@/lib/matching/measurements";
+import type { RedFlagPolicy } from "@/lib/matching/red-flags";
 import { getDb } from "@/server/db/client";
 import { bool, ids, int, list, money, optStr, str, type ActionResult } from "@/server/form";
 import {
@@ -86,6 +88,19 @@ export async function deleteGroupAction(id: number): Promise<ActionResult> {
 
 // --- Categories ---------------------------------------------------------------------------
 
+function measurementRanges(fd: FormData): MeasurementRanges {
+  const num = (k: string) => {
+    const v = str(fd, k);
+    if (v === "") return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new ValidationError(`“${v}” isn't a number.`);
+    return n;
+  };
+  const out: MeasurementRanges = {};
+  for (const key of MEASUREMENT_KEYS) out[key] = { min: num(`m_${key}_min`), max: num(`m_${key}_max`) };
+  return out;
+}
+
 function categoryFields(fd: FormData) {
   return {
     name: str(fd, "name"),
@@ -99,6 +114,7 @@ function categoryFields(fd: FormData) {
     ebayCategoryIds: list(fd, "ebayCategoryIds"),
     titleKeywords: list(fd, "titleKeywords"),
     excludeKeywords: list(fd, "excludeKeywords"),
+    measurementRanges: measurementRanges(fd),
   };
 }
 
@@ -180,6 +196,8 @@ export async function updateDefaultsAction(_prev: ActionResult | null, fd: FormD
       excludeKeywords: list(fd, "excludeKeywords"),
       priceMinMinor: min === "" ? null : money(fd, "priceMin"),
       priceMaxMinor: max === "" ? null : money(fd, "priceMax"),
+      redFlagPhrases: list(fd, "redFlagPhrases"),
+      redFlagPolicy: (str(fd, "redFlagPolicy") || "exclude") as RedFlagPolicy,
     });
   }, "Defaults saved. Profiles that inherit them were updated.");
 }
@@ -203,6 +221,8 @@ export async function updateScanSettingsAction(_prev: ActionResult | null, fd: F
       staleAfterHours: n("staleAfterHours"),
       includeAuctions: bool(fd, "includeAuctions"),
       deliveryCountry: str(fd, "deliveryCountry").toUpperCase(),
+      minSellerFeedbackScore: str(fd, "minSellerFeedbackScore") === "" ? null : n("minSellerFeedbackScore"),
+      minSellerFeedbackPercent: str(fd, "minSellerFeedbackPercent") === "" ? null : Number(str(fd, "minSellerFeedbackPercent")),
     });
   }, "Scan settings saved.");
 }

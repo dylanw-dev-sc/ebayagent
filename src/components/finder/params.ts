@@ -29,6 +29,7 @@ export function parseFeedParams(sp: SearchParams, defaults: { view?: FeedView } 
     review: rev === "reviewed" || rev === "unreviewed" ? rev : undefined,
     profileId: posInt(first(sp.profile)),
     q: first(sp.q) || undefined,
+    newOnly: first(sp.new) === "1",
     sort: SORTS.includes(sort) ? sort : "newest",
     page: posInt(first(sp.page)) ?? 1,
     pageSize: PAGE_SIZE,

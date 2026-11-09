@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { loadScanSettings } from "@/server/services/context";
-import { getFeed, getFeedFacets, getListingDetail, type FeedFilters, type FeedView } from "@/server/services/feed";
+import { loadBrands, loadCategories, loadScanSettings } from "@/server/services/context";
+import { suggestCorrections } from "@/server/services/corrections";
+import { getFeed, getFeedFacets, getFeedNeighbors, getListingDetail, type FeedFilters, type FeedView } from "@/server/services/feed";
+import { newSinceFor } from "@/server/services/visits";
+import { formatDateTime } from "@/lib/format";
 import { getSystemStatus } from "@/server/services/status";
 import { requestDb } from "@/server/request";
 import { buttonClass, EmptyState, TabLink } from "../ui";
 import { DrawerShell } from "./drawer-shell";
+import { DrawerNav, TriageKeys, VisitTracker } from "./triage";
 import { FilterBar, SortSelect } from "./filter-bar";
 import { ListingCard } from "./listing-card";
 import { ListingDetail } from "./listing-detail";
@@ -24,12 +28,22 @@ export async function FeedView({ basePath, searchParams, fixedView }: { basePath
   const db = await requestDb();
   const status = getSystemStatus(db);
   const source = status.dataSource;
-  const filters: FeedFilters = { ...parseFeedParams(sp), ...(fixedView ? { view: fixedView } : {}) };
+  const trackVisits = basePath === "/finder";
+  const filters: FeedFilters = {
+    ...parseFeedParams(sp),
+    ...(fixedView ? { view: fixedView } : {}),
+    newSince: trackVisits ? newSinceFor(db, source) : null,
+  };
   const feed = getFeed(db, filters, source);
   const facets = getFeedFacets(db, source);
   const listingId = Number(Array.isArray(sp.listing) ? sp.listing[0] : sp.listing);
   const detail = Number.isInteger(listingId) && listingId > 0 ? getListingDetail(db, listingId) : null;
+  const neighbors = detail ? getFeedNeighbors(db, filters, source, detail.listing.id) : null;
+  const neighborHref = (n: { id: number; page: number } | null | undefined) => (n ? hrefWith(basePath, sp, { listing: n.id, page: n.page > 1 ? n.page : null }) : null);
+  const closeHref = hrefWith(basePath, sp, { listing: null });
   const staleAfterHours = loadScanSettings(db).staleAfterHours;
+  const allBrands = detail ? loadBrands(db) : [];
+  const allCategories = detail ? loadCategories(db) : [];
   const showReason = filters.view === "review" || filters.view === "excluded" || filters.view === "dismissed";
   const totalPages = Math.max(1, Math.ceil(feed.total / feed.pageSize));
   const neverScanned = !status.lastScan;
@@ -77,6 +91,24 @@ export async function FeedView({ basePath, searchParams, fixedView }: { basePath
       </div>
 
       <FilterBar facets={facets} />
+      {trackVisits ? <VisitTracker source={source} /> : null}
+      {filters.newSince && (feed.newCount > 0 || filters.newOnly) ? (
+        <div className="-mt-2 flex items-center gap-2 text-[13px]">
+          <Link
+            href={hrefWith(basePath, sp, { new: filters.newOnly ? null : "1", page: null, listing: null })}
+            scroll={false}
+            className={
+              filters.newOnly
+                ? "inline-flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 font-medium text-white"
+                : "inline-flex h-8 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 font-medium text-ink hover:bg-muted"
+            }
+          >
+            <span className="size-1.5 rounded-full bg-match" aria-hidden />
+            {filters.newOnly ? `Showing ${feed.newCount} new — show all` : `${feed.newCount} new since your last visit`}
+          </Link>
+          <span className="text-ink-3">First seen after {formatDateTime(filters.newSince)}</span>
+        </div>
+      ) : null}
 
       {feed.items.length === 0 ? (
         neverScanned ? (
@@ -117,8 +149,45 @@ export async function FeedView({ basePath, searchParams, fixedView }: { basePath
       ) : null}
 
       {detail ? (
-        <DrawerShell closeHref={hrefWith(basePath, sp, { listing: null })} label={detail.listing.title}>
-          <ListingDetail d={detail} staleAfterHours={staleAfterHours} />
+        <DrawerShell
+          closeHref={closeHref}
+          label={detail.listing.title}
+          nav={
+            <DrawerNav
+              prevHref={neighborHref(neighbors?.prev)}
+              nextHref={neighborHref(neighbors?.next)}
+              position={neighbors?.index !== null && neighbors?.index !== undefined ? `${neighbors.index + 1} of ${neighbors.total}` : null}
+            />
+          }
+        >
+          <TriageKeys
+            listingId={detail.listing.id}
+            saved={detail.userState?.saved ?? false}
+            dismissed={detail.userState?.dismissed ?? false}
+            reviewed={detail.userState?.reviewed ?? false}
+            nextHref={neighborHref(neighbors?.next)}
+            prevHref={neighborHref(neighbors?.prev)}
+            closeHref={closeHref}
+          />
+          <ListingDetail
+            d={detail}
+            staleAfterHours={staleAfterHours}
+            corrections={suggestCorrections({
+              title: detail.listing.title,
+              brandAspect: detail.listing.brandAspect,
+              facts: detail.facts,
+              bestProfile: detail.profiles.find((p) => p.state === detail.evaluation.state),
+              brands: allBrands,
+              categories: allCategories.map((c) => ({
+                id: c.id,
+                name: c.name,
+                acceptedSizes: c.defaultSizes.accepted,
+                reviewSizes: c.defaultSizes.review,
+                excludeKeywords: c.excludeKeywords,
+              })),
+            })}
+            brandOptions={allBrands.map((b) => ({ id: b.id, name: b.name }))}
+          />
         </DrawerShell>
       ) : null}
     </div>

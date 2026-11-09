@@ -173,6 +173,20 @@ export function purgeOutsideWindow(db: AppDb, source: ListingSource, windowStart
     .run().changes;
 }
 
+/** Remove a stored listing unless you saved it (used when its seller falls below your minimum). */
+export function deleteUnsavedListing(db: AppDb, source: ListingSource, externalId: string): number {
+  return db
+    .delete(s.listings)
+    .where(
+      and(
+        eq(s.listings.source, source),
+        eq(s.listings.externalId, externalId),
+        sql`not exists (select 1 from ${s.listingUserStates} u where u.source = ${s.listings.source} and u.external_id = ${s.listings.externalId} and u.saved = 1)`,
+      ),
+    )
+    .run().changes;
+}
+
 export function deleteListingByExternalId(db: AppDb, source: ListingSource, externalId: string): number {
   return db
     .delete(s.listings)

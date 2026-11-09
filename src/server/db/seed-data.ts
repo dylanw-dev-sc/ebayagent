@@ -1,4 +1,5 @@
 import type { MaterialPriority, SizeSystem, UnknownMaterialPolicy } from "../../lib/domain/types";
+import { DEFAULT_RED_FLAG_PHRASES, type RedFlagPolicy } from "../../lib/matching/red-flags";
 
 /**
  * Initial clothing profile. These are SEED values only: they are inserted once
@@ -280,6 +281,10 @@ export interface DefaultsSetting {
   excludeKeywords: string[];
   priceMinMinor: number | null;
   priceMaxMinor: number | null;
+  /** Counterfeit red-flag phrases (title or description; negated mentions ignored). */
+  redFlagPhrases: string[];
+  /** What a red flag does: exclude the listing, send it to review, or just flag it. */
+  redFlagPolicy: RedFlagPolicy;
 }
 
 export const seedDefaults: DefaultsSetting = {
@@ -287,6 +292,8 @@ export const seedDefaults: DefaultsSetting = {
   excludeKeywords: [],
   priceMinMinor: null,
   priceMaxMinor: null,
+  redFlagPhrases: DEFAULT_RED_FLAG_PHRASES,
+  redFlagPolicy: "exclude",
 };
 
 export interface ScanSettings {
@@ -312,6 +319,10 @@ export interface ScanSettings {
   retentionDays: number;
   /** Listing data older than this is labeled stale (eBay: ≤ 6 hours unless the age is disclosed). */
   staleAfterHours: number;
+  /** Skip listings from sellers below this feedback score (null = off). Applied during scans; seller data isn't stored. */
+  minSellerFeedbackScore: number | null;
+  /** Skip listings from sellers below this positive-feedback percentage (null = off). */
+  minSellerFeedbackPercent: number | null;
 }
 
 export const seedScanSettings: ScanSettings = {
@@ -326,4 +337,6 @@ export const seedScanSettings: ScanSettings = {
   deliveryCountry: "US",
   retentionDays: 14,
   staleAfterHours: 6,
+  minSellerFeedbackScore: null,
+  minSellerFeedbackPercent: null,
 };

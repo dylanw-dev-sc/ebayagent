@@ -110,6 +110,21 @@ describe("scanning, normalization and deduplication", () => {
   });
 });
 
+describe("details for listings made relevant by a rule change", () => {
+  it("a later scan fetches item details for stored listings that now look promising", async () => {
+    const { db } = memoryDb();
+    await scan(db, fixture(1));
+    // Excluded on its title ("40R"), so its details were never fetched.
+    expect(listingByExt(db, "FX-303")!.detailsFetchedAt).toBeNull();
+    updateCategory(db, categoryId(db, "jackets-outerwear"), { acceptedSizes: ["44R", "40R"] });
+    expect(evalByExt(db, "FX-303")!.state).toBe("review"); // fabric unknown until details are fetched
+    expect(evalByExt(db, "FX-303")!.summary).toMatch(/item details not fetched yet/);
+    await scan(db, fixture(1));
+    expect(listingByExt(db, "FX-303")!.detailsFetchedAt).not.toBeNull();
+    expect(evalByExt(db, "FX-303")!.state).toBe("match");
+  });
+});
+
 describe("seller descriptions", () => {
   it("reads fabric stated only in the description, ignoring packaging and boilerplate", async () => {
     const { db } = memoryDb();

@@ -150,6 +150,7 @@ async function ScansContent() {
                     <td className="px-4 py-3 tabular">
                       {r.examined.toLocaleString()}
                       {r.skippedOld ? <p className="text-xs text-ink-3">{r.skippedOld.toLocaleString()} older than window</p> : null}
+                      {r.skippedSeller ? <p className="text-xs text-ink-3">{r.skippedSeller.toLocaleString()} below seller minimum</p> : null}
                     </td>
                     <td className="px-4 py-3 tabular">{r.newListings.toLocaleString()}</td>
                     <td className="px-4 py-3 tabular">{r.updatedListings.toLocaleString()}</td>

@@ -6,7 +6,7 @@ import * as s from "../db/schema";
 import type { ScanErrorEntry } from "../db/schema";
 import { loadEngineContext, loadScanSettings } from "../services/context";
 import { recomputePricing, reevaluateListings, rowToListing } from "../services/evaluation";
-import { deleteListingByExternalId, purgeExpiredListings, purgeOutsideWindow, upsertListing } from "../services/listings-write";
+import { deleteListingByExternalId, deleteUnsavedListing, purgeExpiredListings, purgeOutsideWindow, upsertListing } from "../services/listings-write";
 import { planQueries } from "./plan";
 import { createProvider } from "./provider-factory";
 
@@ -40,6 +40,8 @@ export interface ScanResult {
   purged: number;
   /** Returned by the source but posted before the listing-age window, so not stored. */
   skippedOld: number;
+  /** Skipped because the seller's feedback was below your minimum. */
+  skippedSeller: number;
   /** Saved listings re-checked via item details because their data was stale. */
   refreshedSaved: number;
   errors: ScanErrorEntry[];
@@ -52,6 +54,16 @@ export interface ScanOptions {
   now?: () => Date;
   /** Called after each page so callers can observe progress. */
   onProgress?: (r: ScanResult) => void;
+}
+
+/** Your optional seller minimums. Unknown feedback (e.g. fixtures) never counts against a listing. */
+export function sellerBelowMinimum(
+  item: { sellerFeedbackScore?: number | null; sellerFeedbackPercent?: number | null },
+  settings: { minSellerFeedbackScore: number | null; minSellerFeedbackPercent: number | null },
+): boolean {
+  if (settings.minSellerFeedbackScore !== null && item.sellerFeedbackScore != null && item.sellerFeedbackScore < settings.minSellerFeedbackScore) return true;
+  if (settings.minSellerFeedbackPercent !== null && item.sellerFeedbackPercent != null && item.sellerFeedbackPercent < settings.minSellerFeedbackPercent) return true;
+  return false;
 }
 
 /** Mark scans whose heartbeat stopped (process killed / crashed) as interrupted. */
@@ -129,6 +141,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     rejectedNew: 0,
     purged: 0,
     skippedOld: 0,
+    skippedSeller: 0,
     refreshedSaved: 0,
     errors: [],
     rateLimited: false,
@@ -158,6 +171,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         updatedListings: r.updatedListings,
         unchangedListings: r.unchangedListings,
         skippedOld: r.skippedOld,
+        skippedSeller: r.skippedSeller,
         errorCount: r.errors.length,
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,
@@ -234,6 +248,12 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
               r.skippedOld++;
               continue;
             }
+            if (sellerBelowMinimum(item, settings)) {
+              r.skippedSeller++;
+              // Stored before you set the minimum: remove it now (unless you saved it).
+              r.purged += deleteUnsavedListing(tx as unknown as AppDb, provider.id === "fixture" ? "fixture" : "ebay", item.externalId);
+              continue;
+            }
             if (seen.has(item.externalId)) {
               r.duplicates++;
               // Still record that this query's category also found it.
@@ -285,17 +305,36 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     }
 
     // --- Enrichment: fetch item specifics (brand / size / material) for promising listings.
-    if (!fatal && touched.size > 0 && settings.detailFetchLimit > 0) {
+    // Candidates: new/changed listings (judged on their title alone) plus stored listings that
+    // still lack details but are now undecided or matching — e.g. after you accepted a new size.
+    if (!fatal && settings.detailFetchLimit > 0) {
       // Prioritize listings the title alone can't settle (review), then title-only matches to confirm.
       const rank = { review: 0, match: 1, no_match: 2 } as const;
-      const candidates = db
-        .select()
+      const fromTouched = touched.size
+        ? db
+            .select()
+            .from(s.listings)
+            .where(and(inArray(s.listings.id, Array.from(touched)), isNull(s.listings.detailsFetchedAt)))
+            .all()
+            .map((row) => ({ row, state: evaluateListing(rowToListing(row), ctx.engine).state }))
+        : [];
+      const fromStored = db
+        .select({ row: s.listings, state: s.listingEvaluations.state })
         .from(s.listings)
-        .where(and(inArray(s.listings.id, Array.from(touched)), isNull(s.listings.detailsFetchedAt)))
+        .innerJoin(s.listingEvaluations, eq(s.listingEvaluations.listingId, s.listings.id))
+        .where(
+          and(
+            eq(s.listings.source, provider.id === "fixture" ? "fixture" : "ebay"),
+            isNull(s.listings.detailsFetchedAt),
+            inArray(s.listingEvaluations.state, ["review", "match"]),
+            sql`coalesce(${s.listings.originAt}, ${s.listings.listedAt}, ${s.listings.firstSeenAt}) >= ${windowStart.getTime()}`,
+          ),
+        )
         .all()
-        .map((row) => ({ row, ev: evaluateListing(rowToListing(row), ctx.engine) }))
-        .filter(({ ev }) => ev.state !== "no_match")
-        .sort((a, b) => rank[a.ev.state] - rank[b.ev.state] || (b.row.originAt?.getTime() ?? 0) - (a.row.originAt?.getTime() ?? 0))
+        .filter(({ row }) => !touched.has(row.id));
+      const candidates = [...fromTouched, ...fromStored]
+        .filter(({ state }) => state !== "no_match")
+        .sort((a, b) => rank[a.state] - rank[b.state] || (b.row.originAt?.getTime() ?? 0) - (a.row.originAt?.getTime() ?? 0))
         .slice(0, settings.detailFetchLimit);
 
       for (const { row } of candidates) {
@@ -312,7 +351,10 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
             newIds.delete(row.id);
             continue;
           }
-          if (detail.listing) upsertListing(db, detail.listing, null, now());
+          if (detail.listing) {
+            const res = upsertListing(db, detail.listing, null, now());
+            touched.add(res.id);
+          }
         } catch (err) {
           r.detailCalls++;
           recordError(`details ${row.externalId}`, err);
@@ -382,7 +424,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
 
     // --- Retention (eBay data-use rules): purge listings not re-confirmed recently.
     const source = provider.id === "fixture" ? "fixture" : "ebay";
-    r.purged = purgeExpiredListings(db, source, settings.retentionDays, now()) + purgeOutsideWindow(db, source, windowStart);
+    r.purged += purgeExpiredListings(db, source, settings.retentionDays, now()) + purgeOutsideWindow(db, source, windowStart);
 
     if (fatal) r.status = r.examined > 0 ? "partial" : "failed";
     else if (r.rateLimited || budgetExhausted) r.status = "partial";
@@ -411,6 +453,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         rejectedNew: r.rejectedNew,
         purged: r.purged,
         skippedOld: r.skippedOld,
+        skippedSeller: r.skippedSeller,
         errorCount: r.errors.length,
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,

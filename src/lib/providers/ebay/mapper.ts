@@ -34,6 +34,7 @@ export interface EbayItemSummary {
   leafCategoryIds?: string[];
   itemCreationDate?: string;
   itemOriginDate?: string;
+  seller?: { username?: string; feedbackPercentage?: string; feedbackScore?: number };
 }
 
 /** Longest description text kept per listing (enough for fabric details; avoids storing whole pages). */
@@ -136,6 +137,9 @@ export function mapItemSummary(item: EbayItemSummary): NormalizedListing | null 
     originAt: parseDate(item.itemOriginDate) ?? parseDate(item.itemCreationDate),
     detailsFetched: false,
     description: null,
+    // Used only for your seller minimums during the scan; never stored (no seller data is persisted).
+    sellerFeedbackScore: typeof item.seller?.feedbackScore === "number" ? item.seller.feedbackScore : null,
+    sellerFeedbackPercent: item.seller?.feedbackPercentage !== undefined && Number.isFinite(Number(item.seller.feedbackPercentage)) ? Number(item.seller.feedbackPercentage) : null,
   };
 }
 

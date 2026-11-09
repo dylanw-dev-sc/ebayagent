@@ -8,6 +8,8 @@ import { setUserStateForListing } from "@/server/services/user-state";
 import * as s from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { run } from "./_run";
+import { recordVisit } from "@/server/services/visits";
+import type { ListingSource } from "@/lib/domain/types";
 
 export async function setListingStateAction(listingId: number, patch: { saved?: boolean; dismissed?: boolean; reviewed?: boolean }): Promise<ActionResult> {
   return run(() => {
@@ -39,4 +41,9 @@ export async function clearPriceOverrideAction(listingId: number): Promise<Actio
     const { source, externalId } = listingKey(listingId);
     clearPriceOverride(getDb(), source, externalId);
   }, "Override removed.");
+}
+
+/** Record a Finder visit (for "new since your last visit"). Doesn't refresh the page. */
+export async function recordFinderVisitAction(source: ListingSource): Promise<void> {
+  recordVisit(getDb(), source === "ebay" ? "ebay" : "fixture");
 }

@@ -1,5 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import type { MaterialPriority, SizeSystem } from "../../lib/domain/types";
+import { MEASUREMENT_KEYS, MEASUREMENT_LABEL, type MeasurementRanges } from "../../lib/matching/measurements";
 import { parseSizeText } from "../../lib/matching/size";
 import { normalizePhrase, uniq } from "../../lib/text";
 import type { AppDb } from "../db/client";
@@ -142,6 +143,22 @@ export function deleteGroup(db: AppDb, id: number): void {
 
 // --- Categories & sizes -----------------------------------------------------------------------
 
+function validateMeasurementRanges(ranges: MeasurementRanges): MeasurementRanges {
+  const out: MeasurementRanges = {};
+  for (const key of MEASUREMENT_KEYS) {
+    const r = ranges[key];
+    if (!r || (r.min === null && r.max === null)) continue;
+    for (const v of [r.min, r.max]) {
+      if (v !== null && (!Number.isFinite(v) || v <= 5 || v > 60)) {
+        throw new ValidationError(`${MEASUREMENT_LABEL[key]}: enter flat measurements in inches (e.g. 22.5).`);
+      }
+    }
+    if (r.min !== null && r.max !== null && r.min > r.max) throw new ValidationError(`${MEASUREMENT_LABEL[key]}: the minimum is above the maximum.`);
+    out[key] = { min: r.min, max: r.max };
+  }
+  return out;
+}
+
 export interface CategoryInput {
   name: string;
   noun?: string;
@@ -155,6 +172,7 @@ export interface CategoryInput {
   ebayCategoryIds?: string[];
   titleKeywords?: string[];
   excludeKeywords?: string[];
+  measurementRanges?: MeasurementRanges;
 }
 
 function validateSizes(list: string[], label: string): string[] {
@@ -206,6 +224,7 @@ export function createCategory(db: AppDb, input: CategoryInput): number {
       ebayCategoryIds: validateEbayIds(db, input.ebayCategoryIds ?? [], null),
       titleKeywords: clean(input.titleKeywords),
       excludeKeywords: clean(input.excludeKeywords),
+      measurementRanges: validateMeasurementRanges(input.measurementRanges ?? {}),
       sortOrder: max + 1,
     })
     .returning({ id: s.categories.id })
@@ -231,6 +250,7 @@ export function updateCategory(db: AppDb, id: number, patch: Partial<CategoryInp
   if (patch.ebayCategoryIds !== undefined) set.ebayCategoryIds = validateEbayIds(db, patch.ebayCategoryIds, id);
   if (patch.titleKeywords !== undefined) set.titleKeywords = clean(patch.titleKeywords);
   if (patch.excludeKeywords !== undefined) set.excludeKeywords = clean(patch.excludeKeywords);
+  if (patch.measurementRanges !== undefined) set.measurementRanges = validateMeasurementRanges(patch.measurementRanges);
   db.update(s.categories).set(set).where(eq(s.categories.id, id)).run();
   refreshDerivedData(db);
 }
@@ -335,6 +355,8 @@ export function createCondition(db: AppDb, input: { name: string; ebayConditionI
 export function updateDefaults(db: AppDb, patch: Partial<DefaultsSetting>): DefaultsSetting {
   const next = { ...loadDefaultsSetting(db), ...patch };
   if (patch.excludeKeywords) next.excludeKeywords = clean(patch.excludeKeywords);
+  if (patch.redFlagPhrases) next.redFlagPhrases = clean(patch.redFlagPhrases);
+  if (!["exclude", "review", "flag"].includes(next.redFlagPolicy)) throw new ValidationError("Choose what a red flag should do.");
   if (next.priceMinMinor !== null && next.priceMaxMinor !== null && next.priceMinMinor > next.priceMaxMinor) {
     throw new ValidationError("Minimum price can't be above the maximum price.");
   }
@@ -359,8 +381,16 @@ export function updateScanSettings(db: AppDb, patch: Partial<ScanSettings>): Sca
   intIn(next.retentionDays, 1, 30, "Retention days");
   intIn(next.staleAfterHours, 1, 24, "Stale-after hours");
   if (next.deliveryCountry && !/^[A-Z]{2}$/.test(next.deliveryCountry)) throw new ValidationError("Delivery country must be a 2-letter code like US.");
+  if (next.minSellerFeedbackScore !== null) intIn(next.minSellerFeedbackScore, 0, 10_000_000, "Minimum seller feedback score");
+  if (next.minSellerFeedbackPercent !== null && !(next.minSellerFeedbackPercent >= 0 && next.minSellerFeedbackPercent <= 100)) {
+    throw new ValidationError("Minimum positive feedback must be between 0 and 100%.");
+  }
   saveSetting(db, "scan", next);
-  if (next.maxListingAgeDays !== previous.maxListingAgeDays) {
+  if (
+    next.maxListingAgeDays !== previous.maxListingAgeDays ||
+    next.minSellerFeedbackScore !== previous.minSellerFeedbackScore ||
+    next.minSellerFeedbackPercent !== previous.minSellerFeedbackPercent
+  ) {
     // Forget per-search bookmarks so the next scan covers the whole new window.
     db.delete(s.queryStates).run();
   }

@@ -8,6 +8,9 @@ import { ActionButton, ActionForm, SubmitButton } from "../forms";
 import { Badge, KeyValue, cn } from "../ui";
 import { DetailActions } from "./card-actions";
 import { PhotoGallery } from "./photo-gallery";
+import { CorrectionPanel } from "./correction-panel";
+import { MEASUREMENT_LABEL } from "@/lib/matching/measurements";
+import type { Suggestion } from "@/server/services/corrections";
 
 type Detail = NonNullable<ReturnType<typeof getListingDetail>>;
 
@@ -30,7 +33,17 @@ function upperFirst(s: string) {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-export function ListingDetail({ d, staleAfterHours }: { d: Detail; staleAfterHours: number }) {
+export function ListingDetail({
+  d,
+  staleAfterHours,
+  corrections,
+  brandOptions,
+}: {
+  d: Detail;
+  staleAfterHours: number;
+  corrections: Suggestion[];
+  brandOptions: Array<{ id: number; name: string }>;
+}) {
   const l = d.listing;
   const f = d.facts;
   const currency = l.currency ?? "USD";
@@ -109,6 +122,25 @@ export function ListingDetail({ d, staleAfterHours }: { d: Detail; staleAfterHou
               {reading.status === "composition" ? "fiber percentages stated" : reading.status === "stated" ? "fibers named without percentages" : "seller gave no composition"}
             </span>
           </KeyValue>
+          <KeyValue label="Measurements">
+            {f.measurements?.found.length ? (
+              <ul className="space-y-0.5">
+                {f.measurements.found.map((m) => (
+                  <li key={m.key}>
+                    {MEASUREMENT_LABEL[m.key]} {m.inches} in
+                    {m.note ? <span className="text-xs text-ink-3"> ({m.note})</span> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              "None stated"
+            )}
+            <span className="block text-xs text-ink-3">Flat garment measurements read from the description or title</span>
+          </KeyValue>
+          <KeyValue label="Authenticity">
+            {f.redFlags?.length ? <span className="text-exclude">Red flag: {f.redFlags.map((x) => `“${x}”`).join(", ")}</span> : "No red-flag phrases found"}
+            <span className="block text-xs text-ink-3">Phrases like “replica” or “inspired by” (Preferences → Other defaults)</span>
+          </KeyValue>
           <KeyValue label="Material notes">
             <ul className="space-y-0.5 text-xs text-ink-2">
               {reading.facts.map((x) => (
@@ -155,6 +187,8 @@ export function ListingDetail({ d, staleAfterHours }: { d: Detail; staleAfterHou
           {d.profiles.length === 0 ? <li className="py-3 text-sm text-ink-3">No enabled search profiles.</li> : null}
         </ul>
       </section>
+
+      <CorrectionPanel suggestions={corrections} brands={brandOptions} />
 
       {/* Pricing */}
       <section className="card p-5">

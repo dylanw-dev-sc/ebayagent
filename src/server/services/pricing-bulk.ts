@@ -16,6 +16,7 @@ export interface GridCell {
   brandId: number | null;
   /** null = cell left empty (an existing rule for it is removed). */
   retailMinor: number | null;
+  /** null = use your default %. */
   bps: number | null;
 }
 
@@ -27,22 +28,38 @@ export interface BulkResult {
   errors: string[];
 }
 
-function findRule(db: AppDb, categoryId: number, brandId: number | null) {
+/** The rule for (category, brand, material); the grid only ever touches rules without a material. */
+function findRule(db: AppDb, categoryId: number, brandId: number | null, materialKey: string | null = null) {
   return (
     db
       .select()
       .from(s.pricingRules)
-      .where(and(eq(s.pricingRules.categoryId, categoryId), brandId === null ? isNull(s.pricingRules.brandId) : eq(s.pricingRules.brandId, brandId)))
+      .where(
+        and(
+          eq(s.pricingRules.categoryId, categoryId),
+          brandId === null ? isNull(s.pricingRules.brandId) : eq(s.pricingRules.brandId, brandId),
+          materialKey === null ? isNull(s.pricingRules.materialKey) : eq(s.pricingRules.materialKey, materialKey),
+        ),
+      )
       .get() ?? null
   );
 }
 
 function upsertRule(
   db: AppDb,
-  r: { categoryId: number; brandId: number | null; retailMinor: number; bps: number; retailSource?: string | null; notes?: string | null; active?: boolean },
+  r: {
+    categoryId: number;
+    brandId: number | null;
+    materialKey?: string | null;
+    retailMinor: number;
+    bps: number | null;
+    retailSource?: string | null;
+    notes?: string | null;
+    active?: boolean;
+  },
   result: BulkResult,
 ): void {
-  const existing = findRule(db, r.categoryId, r.brandId);
+  const existing = findRule(db, r.categoryId, r.brandId, r.materialKey ?? null);
   if (existing) {
     const changed =
       existing.referenceRetailMinor !== r.retailMinor ||
@@ -69,15 +86,25 @@ function upsertRule(
     return;
   }
   db.insert(s.pricingRules)
-    .values({ categoryId: r.categoryId, brandId: r.brandId, referenceRetailMinor: r.retailMinor, allowedBps: r.bps, retailSource: r.retailSource ?? null, notes: r.notes ?? null, active: r.active ?? true })
+    .values({
+      categoryId: r.categoryId,
+      brandId: r.brandId,
+      materialKey: r.materialKey ?? null,
+      referenceRetailMinor: r.retailMinor,
+      allowedBps: r.bps,
+      retailSource: r.retailSource ?? null,
+      notes: r.notes ?? null,
+      active: r.active ?? true,
+    })
     .run();
   result.created++;
 }
 
-const validBps = (bps: number | null): bps is number => bps !== null && bps > 0 && bps <= 10000;
+/** A blank % (null) is fine — it means "use my default %". */
+const validBps = (bps: number | null): boolean => bps === null || (Number.isInteger(bps) && bps > 0 && bps <= 10000);
 
-/** Save the whole grid at once, then recalculate prices once. */
-export function saveRuleGrid(db: AppDb, cells: GridCell[], opts: { defaultBps: number | null; retailSource: string | null }): BulkResult {
+/** Save the whole grid at once, then recalculate prices once. Blank % cells use your default %. */
+export function saveRuleGrid(db: AppDb, cells: GridCell[], opts: { retailSource: string | null }): BulkResult {
   const result: BulkResult = { created: 0, updated: 0, deleted: 0, skipped: 0, errors: [] };
   const brandName = new Map(loadBrands(db).map((b) => [b.id, b.name]));
   const catName = new Map(loadCategories(db).map((c) => [c.id, c.name]));
@@ -92,16 +119,15 @@ export function saveRuleGrid(db: AppDb, cells: GridCell[], opts: { defaultBps: n
         }
         continue;
       }
-      const bps = cell.bps ?? opts.defaultBps;
       if (cell.retailMinor <= 0) {
         result.errors.push(`${label}: retail must be more than $0.`);
         continue;
       }
-      if (!validBps(bps)) {
-        result.errors.push(`${label}: enter an allowed % (or set a default %).`);
+      if (!validBps(cell.bps)) {
+        result.errors.push(`${label}: allowed % must be between 0.01 and 100 (or blank for your default).`);
         continue;
       }
-      upsertRule(tx as unknown as AppDb, { categoryId: cell.categoryId, brandId: cell.brandId, retailMinor: cell.retailMinor, bps, retailSource: opts.retailSource }, result);
+      upsertRule(tx as unknown as AppDb, { categoryId: cell.categoryId, brandId: cell.brandId, retailMinor: cell.retailMinor, bps: cell.bps, retailSource: opts.retailSource }, result);
     }
   });
   recomputePricing(db);
@@ -110,7 +136,7 @@ export function saveRuleGrid(db: AppDb, cells: GridCell[], opts: { defaultBps: n
 
 // --- CSV ---------------------------------------------------------------------------------
 
-export const RULE_CSV_HEADER = ["category", "brand", "reference_retail_usd", "allowed_percent", "retail_source", "notes", "active"];
+export const RULE_CSV_HEADER = ["category", "brand", "material", "reference_retail_usd", "allowed_percent", "retail_source", "notes", "active"];
 const ALL_BRANDS = "All brands";
 
 /** Minimal RFC 4180 parser: quoted fields, escaped quotes, commas and newlines inside quotes. */
@@ -168,12 +194,14 @@ export function exportRulesCsv(db: AppDb, opts: { template: boolean }): string {
   const rules = db.select().from(s.pricingRules).all();
   const allCategories = loadCategories(db);
   const allBrands = loadBrands(db);
+  const materialNames = new Map(db.select().from(s.materials).all().map((m) => [m.key, m.name]));
   const rows: string[][] = [RULE_CSV_HEADER];
   const ruleRow = (r: (typeof rules)[number]) => [
     allCategories.find((c) => c.id === r.categoryId)?.name ?? "",
     r.brandId === null ? ALL_BRANDS : allBrands.find((b) => b.id === r.brandId)?.name ?? "",
+    r.materialKey === null ? "" : materialNames.get(r.materialKey) ?? r.materialKey,
     minorToInput(r.referenceRetailMinor),
-    formatBps(r.allowedBps).replace("%", ""),
+    r.allowedBps === null ? "" : formatBps(r.allowedBps).replace("%", ""),
     r.retailSource ?? "",
     r.notes ?? "",
     r.active ? "yes" : "no",
@@ -183,14 +211,18 @@ export function exportRulesCsv(db: AppDb, opts: { template: boolean }): string {
   } else {
     for (const c of categories) {
       for (const brandId of [null, ...brands.map((b) => b.id)]) {
-        const r = rules.find((x) => x.categoryId === c.id && x.brandId === brandId);
-        rows.push(r ? ruleRow(r) : [c.name, brandId === null ? ALL_BRANDS : brands.find((b) => b.id === brandId)!.name, "", "", "", "", "yes"]);
+        const r = rules.find((x) => x.categoryId === c.id && x.brandId === brandId && x.materialKey === null);
+        rows.push(r ? ruleRow(r) : [c.name, brandId === null ? ALL_BRANDS : brands.find((b) => b.id === brandId)!.name, "", "", "", "", "", "yes"]);
       }
     }
+    // Material-specific rules you already have are included too.
+    for (const r of rules) if (r.materialKey !== null) rows.push(ruleRow(r));
   }
   const header = rows[0];
-  const body = rows.slice(1).sort((a, b) => a[0].localeCompare(b[0]) || (a[1] === ALL_BRANDS ? -1 : b[1] === ALL_BRANDS ? 1 : a[1].localeCompare(b[1])));
-  return toCsv([header, ...body], [2, 3]);
+  const body = rows
+    .slice(1)
+    .sort((a, b) => a[0].localeCompare(b[0]) || (a[1] === ALL_BRANDS ? -1 : b[1] === ALL_BRANDS ? 1 : a[1].localeCompare(b[1])) || a[2].localeCompare(b[2]));
+  return toCsv([header, ...body], [3, 4]);
 }
 
 /**
@@ -222,6 +254,11 @@ export function importRulesCsv(db: AppDb, text: string): BulkResult {
     const n = normalizePhrase(v);
     return brands.find((b) => [b.name, ...b.aliases].some((x) => normalizePhrase(x) === n));
   };
+  const materials = db.select().from(s.materials).all();
+  const findMaterial = (v: string) => {
+    const n = normalizePhrase(v);
+    return materials.find((m) => normalizePhrase(m.name) === n || normalizePhrase(m.key.replace(/_/g, " ")) === n);
+  };
   const get = (r: string[], name: string) => (col(name) >= 0 ? (r[col(name)] ?? "").trim().replace(/^'(?=[=+\-@])/, "") : "");
 
   db.transaction((tx) => {
@@ -235,19 +272,26 @@ export function importRulesCsv(db: AppDb, text: string): BulkResult {
       const cat = findCategory(get(r, "category"));
       if (!cat) return void result.errors.push(`Line ${line}: unknown category “${get(r, "category")}”.`);
       const brandText = get(r, "brand");
-      const isAll = brandText === "" || /^(all brands|all|\*)/i.test(brandText);
+      const isAll = brandText === "" || /^(all brands|all|\*)$/i.test(brandText);
       const brand = isAll ? null : findBrand(brandText);
       if (!isAll && !brand) return void result.errors.push(`Line ${line}: unknown brand “${brandText}”.`);
+      const materialText = get(r, "material");
+      const material = materialText === "" ? null : findMaterial(materialText);
+      if (materialText !== "" && !material) return void result.errors.push(`Line ${line}: unknown material “${materialText}”.`);
       const retail = parseMoneyToMinor(retailText);
       if (retail === null || retail <= 0) return void result.errors.push(`Line ${line}: retail price “${retailText}” isn't a valid amount.`);
-      const bps = parsePercentToBps(get(r, "allowed_percent"));
-      if (!validBps(bps)) return void result.errors.push(`Line ${line}: allowed percent “${get(r, "allowed_percent")}” must be between 0.01 and 100.`);
+      const percentText = get(r, "allowed_percent");
+      const bps = percentText === "" ? null : parsePercentToBps(percentText);
+      if ((percentText !== "" && bps === null) || !validBps(bps)) {
+        return void result.errors.push(`Line ${line}: allowed percent “${percentText}” must be between 0.01 and 100 (or blank for your default).`);
+      }
       const activeText = get(r, "active").toLowerCase();
       upsertRule(
         tx as unknown as AppDb,
         {
           categoryId: cat.id,
           brandId: brand?.id ?? null,
+          materialKey: material?.key ?? null,
           retailMinor: retail,
           bps,
           retailSource: get(r, "retail_source") || null,

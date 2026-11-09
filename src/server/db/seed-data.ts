@@ -349,6 +349,16 @@ export const seedDefaults: DefaultsSetting = {
   redFlagPolicy: "exclude",
 };
 
+/** Cost Evaluator settings. */
+export interface PricingSettings {
+  /** Your default allowed share of retail (basis points): used by rules/overrides without their own % and by online prices. */
+  defaultAllowedBps: number;
+}
+
+export const seedPricingSettings: PricingSettings = {
+  defaultAllowedBps: 3300, // you chose 30–35% of retail
+};
+
 export interface ScanSettings {
   /** Only consider listings posted within this many days (by eBay's original listing date). */
   maxListingAgeDays: number;

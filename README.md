@@ -89,8 +89,8 @@ Product images are shown directly from eBay's image CDN and are never copied or 
 
 - **Product Finder:** an image grid with *Matches*, *Needs review*, *Excluded*, *All* and *Dismissed* tabs.
   - Filter by brand, category, size, material, color, price eligibility, review status, search profile or title text.
-  - Sort by newly listed, lowest or highest total price, fabric preference (color breaks ties) or color preference (fabric breaks ties).
-  - Each card shows the brand, title, size, fabric, color, condition, price, shipping, total, match state, price eligibility and an eBay link, plus save, dismiss and mark-reviewed controls.
+  - Sort by newly listed, lowest or highest total price, lowest % of retail, fabric preference (color breaks ties) or color preference (fabric breaks ties).
+  - Each card shows the brand, title, size, fabric, color, condition, % of retail, price, shipping, total, match state, price eligibility and an eBay link, plus save, dismiss and mark-reviewed controls.
   - **New since your last visit:** listings found since your previous visit get a *New* badge, and a chip above the grid shows only those. A visit is a browsing session: badges stay put while you look around, and a new session starts after 30 minutes away.
   - The detail panel shows a full-size photo gallery, every fact with its source (including measurements and red-flag checks), the decision for each profile with reasons, the Cost Evaluator's reasoning, and a product-level price override.
   - **Fix the rule from the listing:** under *Wrong decision? Fix the rule*, the detail panel offers one-click fixes for what it just decided (see [Fixing a wrong decision](#fixing-a-wrong-decision)).
@@ -106,9 +106,12 @@ Product images are shown directly from eBay's image CDN and are never copied or 
     | `Esc` | Close |
 
     Shortcuts are ignored while you type in a field, and while the photo gallery has focus (there the arrow keys flip photos).
-- **Cost Evaluator:** a pricing-rules editor with a live max-price preview, plus *Price-eligible*, *Over ceiling (excluded)* and *Needs pricing review* lists. Each listing shows exactly why it passed or failed.
-  - **Brand × category grid** (*Rules → Brand × category grid*): one row per brand plus a category-wide row, with retail and allowed % per category. Set a default % once and enter only retail prices. A cleared cell removes that rule, and everything is recalculated once on save.
-  - **CSV import/export:** download your rules, or a template with a row for every enabled brand × category, fill it in a spreadsheet, and import it. Rows with a blank retail price are skipped (never deleted or filled in), existing rules are updated, and problems are reported by line number. Brands can be written as their name or any alias, and *All brands* means the category-wide rule.
+- **Cost Evaluator:** what share of the new price you'd pay, plus *Price-eligible*, *Over ceiling (excluded)* and *Needs pricing review* lists. Each listing shows exactly why it passed or failed.
+  - **Deals by % of retail:** a slider shows every match and needs-review listing at or below a share of its new price (total with shipping ÷ reference new price), lowest first, filtering as you drag. *Make N% my default* saves it as your default allowed % (starts at 33%).
+  - **Pricing rules** with a live max-price preview. A rule can be for one material only (e.g. Brunello Cucinelli **cashmere** sweaters vs the brand's general sweater price), and a blank % means "use my default".
+  - **Brand × category grid** (*Rules → Brand × category grid*): one row per brand plus a category-wide row, with retail and allowed % per category. Blank % cells use your default %, which you can change at the top of the grid. A cleared cell removes that rule, and everything is recalculated once on save.
+  - **CSV import/export:** download your rules, or a template with a row for every enabled brand × category, fill it in a spreadsheet, and import it. Rows with a blank retail price are skipped (never deleted or filled in), existing rules are updated, and problems are reported by line number. Brands can be written as their name or any alias, *All brands* means the category-wide rule, the optional `material` column (a material's name, e.g. *Cashmere*) makes a one-material rule, and a blank `allowed_percent` uses your default.
+  - **Seller's stated retail:** when a listing says "Retail $1,295", "MSRP", "RRP" or "originally $X", the listing view shows it as the seller's unverified claim, with *Use it for this listing* (a per-listing price). It's never used automatically.
 - **Saved Items:** everything you saved. Saved marks persist across sessions and rescans.
 - **Search Profiles:** create, edit, enable/disable, duplicate and delete. Every setting shows whether it is **Inherited** or an **Override**, with "Reset to default".
 - **Preferences:** brands (groups, aliases, exclusion phrases, eBay search keywords, enable/disable), brand groups, categories (category-specific sizes, measurement ranges, exclude keywords, eBay category mapping), material priorities, color preferences, acceptable conditions, defaults (including counterfeit red-flag phrases) and scan settings (including the listing window and optional seller-feedback minimums).
@@ -129,6 +132,7 @@ Product images are shown directly from eBay's image CDN and are never copied or 
 | Conditions | All accepted except *New with defects* and *Pre-owned – Fair*. |
 | Search profiles | All Preferences, Luxury Shirts, Heritage Jackets, Premium Button-Downs. |
 | Pricing rules | **None.** Retail baselines are yours to enter; the app never invents retail prices or depreciation rates. |
+| Default allowed % | **33%** of retail (you chose 30–35%). Change it with the deals slider or at the top of the grid. |
 
 The eBay US category IDs come from eBay's own category pages: 15687 T-Shirts, 185101 Polos, 57990 Casual Button-Down Shirts, 57991 Dress Shirts, 57988 Coats, Jackets & Vests, 3001 Suits & Suit Separates, and 11484 Sweaters. Blazers moved into 3001 when 3002 was retired.
 
@@ -205,7 +209,16 @@ Colors are read from the title and the seller's *Color* item specific (eBay ofte
 
 ### Prices
 
-- **Precedence:** product override → brand + category rule → category-wide rule.
+- **Where the new price comes from** (the first that applies wins):
+  1. your price for that listing (set in the listing view, including a seller's stated retail you chose to use)
+  2. your brand + category rule for the listing's main material (e.g. cashmere)
+  3. your brand + category rule
+  4. your category + material rule
+  5. your category-wide rule
+
+  The *main material* is the listing's largest stated fiber (e.g. 70% cashmere / 30% wool → cashmere); a rule for a material the listing doesn't contain never applies.
+- **% of retail** = total with shipping ÷ the new price, rounded up so it's never understated. When shipping is unknown it covers the item price only and shows a "+" (e.g. *30%+*).
+- **Your default %** applies to every rule or per-listing price without its own %, so changing it re-prices all of those at once.
 - **Unknown shipping** is never assumed free. Such listings go to *Needs pricing review*, unless the item price alone already exceeds the ceiling.
 - **Currencies** are not compared without conversion.
 - **Auctions** (off by default, eBay's default) are evaluated on the current bid and labeled.
@@ -321,13 +334,14 @@ Data acquisition (`providers/`) is kept separate from the business rules (`match
 - counterfeit red flags, including negated mentions, and seller-feedback minimums
 - one-click corrections and the re-evaluation they trigger
 - "new since your last visit" sessions and previous/next across pages
-- the pricing grid and CSV import/export (quoting, formula-injection guard, per-line errors, round trip)
+- the pricing grid and CSV import/export (quoting, formula-injection guard, per-line errors, round trip, one-material rules, blank % = your default)
+- new-price precedence with materials, % of retail (rounding, unknown shipping, exact agreement with the ceiling), your default %, seller-stated retail detection (and look-alikes it ignores), and upgrading a previous-version database
 - the Sweaters & Knitwear category, the default conditions, and one-time upgrades of existing databases (applied once, then your edits stick)
 - color reading (longest phrase, shades vs general colors, brand and label names ignored), color decisions, filter and sort
 
 Two optional browser tests drive the running app (each needs Playwright and its own scratch fixture database; see the file headers):
 - `e2e/smoke.mjs`: save, dismiss and review; pricing rules; brand and material edits; profile overrides; the detail drawer; and scanning.
-- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import, knitwear, color preferences and the measuring guide.
+- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import, knitwear, color preferences, the measuring guide, the deals slider, your default % and seller-stated retail.
 
 ## Known limitations
 

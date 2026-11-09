@@ -276,9 +276,12 @@ export const pricingRules = sqliteTable(
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
     brandId: integer("brand_id").references(() => brands.id, { onDelete: "cascade" }),
+    /** Only for listings mainly made of this material (e.g. cashmere); null = any material. */
+    materialKey: text("material_key"),
     referenceRetailMinor: integer("reference_retail_minor").notNull(),
     currency: text("currency").notNull().default("USD"),
-    allowedBps: integer("allowed_bps").notNull(),
+    /** Allowed share of retail in basis points; null = use your default %. */
+    allowedBps: integer("allowed_bps"),
     retailSource: text("retail_source"),
     notes: text("notes"),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
@@ -295,7 +298,8 @@ export const priceOverrides = sqliteTable(
     source: text("source").$type<ListingSource>().notNull(),
     externalId: text("external_id").notNull(),
     referenceRetailMinor: integer("reference_retail_minor").notNull(),
-    allowedBps: integer("allowed_bps").notNull(),
+    /** null = use your default %. */
+    allowedBps: integer("allowed_bps"),
     currency: text("currency").notNull().default("USD"),
     retailSource: text("retail_source"),
     notes: text("notes"),
@@ -321,10 +325,20 @@ export const pricingDecisions = sqliteTable(
     shippingMinor: integer("shipping_minor"),
     totalMinor: integer("total_minor"),
     currency: text("currency").notNull(),
+    /** Whether the allowed % came from your default (the rule or override left it blank). */
+    usesDefaultBps: integer("uses_default_bps", { mode: "boolean" }).notNull().default(false),
+    /** Total ÷ reference retail, in basis points, rounded up (never understated). */
+    pctOfRetailBps: integer("pct_of_retail_bps"),
+    /** True when shipping is unknown, so the % covers the item price only. */
+    pctIsLowerBound: integer("pct_is_lower_bound", { mode: "boolean" }).notNull().default(false),
+    /** Retail price the seller states in the listing (a claim; never used automatically). */
+    sellerRetailMinor: integer("seller_retail_minor"),
+    /** The online price lookup used as the reference, when that's the source. */
+    retailLookupId: integer("retail_lookup_id"),
     explanation: text("explanation").notNull(),
     evaluatedAt: integer("evaluated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (t) => [index("pricing_decisions_status_idx").on(t.status)],
+  (t) => [index("pricing_decisions_status_idx").on(t.status), index("pricing_decisions_pct_idx").on(t.pctOfRetailBps)],
 );
 
 // --- Scanning -----------------------------------------------------------------------------

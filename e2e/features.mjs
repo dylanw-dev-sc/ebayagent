@@ -1,7 +1,8 @@
 /**
  * Optional browser test (not part of `npm test`) for fit by measurements,
  * counterfeit red flags, one-click corrections, keyboard triage, bulk
- * pricing setup (grid + CSV), the knitwear category and color preferences.
+ * pricing setup (grid + CSV), the knitwear category, color preferences and
+ * costing (% of retail, the deals slider, seller-stated retail).
  *
  * It MODIFIES data, so run it against its own scratch fixture database
  * (not one already used by e2e/smoke.mjs):
@@ -108,7 +109,7 @@ const check = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAI
 
   // 6. CSV template download + import
   const tpl = await (await page.request.get(`${BASE}/api/pricing-rules?template=1`)).text();
-  check('Template CSV downloads with header and rows', tpl.startsWith('category,brand,reference_retail_usd') && tpl.split('\n').length > 100);
+  check('Template CSV downloads with header and rows', tpl.startsWith('category,brand,material,reference_retail_usd') && tpl.split('\n').length > 100);
   const csv = 'category,brand,reference_retail_usd,allowed_percent,retail_source,notes,active\nJackets & Outerwear,Kiton,6500,25,kiton.com,,yes\nShirts,Nobody,1,1,,,\n';
   await page.locator('input[name=file]').setInputFiles({ name: 'rules.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
   await page.getByRole('button', { name: 'Import', exact: true }).click();
@@ -145,6 +146,28 @@ const check = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAI
   const guide = page.locator('details', { hasText: 'How to measure' }).first();
   await guide.locator('summary').click();
   check('"How to measure" guide opens beside the measurement ranges', await guide.getByText('1 inch below the armpits').isVisible());
+
+  // 10. Costing: % of retail, the deals slider, your default %, seller-stated retail
+  await page.goto(`${BASE}/cost`); await settle();
+  const dealsCount = async () => Number((((await page.locator('#deals-title').locator('xpath=following-sibling::p[1]').innerText()) || '').match(/^(\d+)/) || [])[1]);
+  const slider = page.getByLabel('Maximum % of retail');
+  await slider.fill('80'); await page.waitForTimeout(250);
+  const at80 = await dealsCount();
+  await slider.fill('5'); await page.waitForTimeout(250);
+  const at5 = await dealsCount();
+  check('Deals slider filters listings by % of retail', at80 > 0 && at5 <= at80, `${at5} at 5%, ${at80} at 80%`);
+  await slider.fill('25');
+  await page.getByRole('button', { name: 'Make 25% my default' }).click();
+  check('The slider saves your default %', await shows(page, 'Your default is 25%'));
+  await page.goto(`${BASE}/finder?sort=pct`); await settle();
+  check('Finder sorts by lowest % of retail and shows it on cards', (await cardText()).includes('of retail'));
+  await page.goto(`${BASE}/finder?view=all&q=Cashmere%20Cardigan`); await settle();
+  await page.locator('article').first().locator('a').nth(1).click(); await settle();
+  const costDlg = page.getByRole('dialog');
+  const claimShown = await shows(costDlg, 'The seller says retail is');
+  await costDlg.getByRole('button', { name: 'Use it for this listing' }).click();
+  check("Seller's stated retail can be used for that listing with one click", claimShown && (await shows(costDlg, 'In use for this listing')) && (await shows(costDlg, 'Seller-stated retail (unverified)')));
+  await page.keyboard.press('Escape'); await settle();
 
   console.log(results.join('\n'));
   console.log(errors.length ? `\nConsole/page errors (${errors.length}):\n` + errors.slice(0, 10).join('\n') : '\nNo console errors.');

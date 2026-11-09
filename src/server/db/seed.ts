@@ -12,6 +12,7 @@ import {
   seedDefaults,
   seedGroups,
   seedMaterials,
+  seedPricingSettings,
   seedProfiles,
   seedScanSettings,
 } from "./seed-data";
@@ -121,6 +122,7 @@ export function seedDatabase(db: Db, opts: { force?: boolean } = {}): { seeded: 
     // Settings
     tx.insert(schema.settings).values({ key: "defaults", value: seedDefaults }).onConflictDoNothing().run();
     tx.insert(schema.settings).values({ key: "scan", value: seedScanSettings }).onConflictDoNothing().run();
+    tx.insert(schema.settings).values({ key: "pricing", value: seedPricingSettings }).onConflictDoNothing().run();
 
     tx.insert(schema.meta)
       .values({ key: "seed_version", value: SEED_VERSION })

@@ -3,10 +3,10 @@
 import { getDb } from "@/server/db/client";
 import { bool, int, money, optStr, percent, str, type ActionResult } from "@/server/form";
 import { ValidationError } from "@/server/services/preferences";
-import { createPricingRule, deletePricingRule, updatePricingRule } from "@/server/services/pricing";
+import { createPricingRule, deletePricingRule, updatePricingRule, updatePricingSettings } from "@/server/services/pricing";
 import { refresh } from "next/cache";
 import { parseMoneyToMinor, parsePercentToBps } from "@/lib/money";
-import { loadBrands, loadCategories } from "@/server/services/context";
+import { loadBrands, loadCategories, loadPricingSettings } from "@/server/services/context";
 import { describeBulkResult, importRulesCsv, saveRuleGrid, type GridCell } from "@/server/services/pricing-bulk";
 import { run } from "./_run";
 
@@ -16,11 +16,14 @@ function ruleFields(fd: FormData) {
   const brandRaw = str(fd, "brandId");
   const retail = money(fd, "retail");
   if (retail === null) throw new ValidationError("Enter a reference retail price (e.g. 450 or 450.00).");
-  const bps = percent(fd, "percent");
-  if (bps === null) throw new ValidationError("Enter the allowed percentage of retail (e.g. 40).");
+  const percentText = str(fd, "percent");
+  const bps = percentText === "" ? null : percent(fd, "percent");
+  if (percentText !== "" && bps === null) throw new ValidationError("Enter the allowed percentage of retail (e.g. 33), or leave it blank to use your default.");
+  const materialRaw = str(fd, "materialKey");
   return {
     categoryId,
     brandId: brandRaw === "" ? null : Number(brandRaw),
+    materialKey: materialRaw === "" ? null : materialRaw,
     referenceRetailMinor: retail,
     allowedBps: bps,
     retailSource: optStr(fd, "retailSource"),
@@ -73,8 +76,14 @@ export async function saveRuleGridAction(_prev: ActionResult | null, fd: FormDat
         cells.push({ categoryId: c.id, brandId: brand?.id ?? null, retailMinor, bps: percentText === "" ? null : parsePercentToBps(percentText) });
       }
     }
+    // The grid's default % is your global default (also used by online prices).
     const defaultText = str(fd, "defaultPercent");
-    const result = saveRuleGrid(db, cells, { defaultBps: defaultText === "" ? null : parsePercentToBps(defaultText), retailSource: optStr(fd, "retailSource") });
+    if (defaultText !== "") {
+      const d = parsePercentToBps(defaultText);
+      if (d === null) throw new ValidationError(`Default % “${defaultText}” isn't a percentage.`);
+      if (d !== loadPricingSettings(db).defaultAllowedBps) updatePricingSettings(db, { defaultAllowedBps: d });
+    }
+    const result = saveRuleGrid(db, cells, { retailSource: optStr(fd, "retailSource") });
     refresh();
     const errors = [...problems, ...result.errors];
     return errors.length
@@ -94,4 +103,14 @@ export async function importRulesCsvAction(_prev: ActionResult | null, fd: FormD
   return result.errors.length
     ? { ok: false, error: `${describeBulkResult(result)} ${result.errors.slice(0, 6).join(" ")}${result.errors.length > 6 ? ` (+${result.errors.length - 6} more)` : ""}` }
     : { ok: true, message: describeBulkResult(result) };
+}
+
+/** The deals slider's "save as my default" button. */
+export async function saveDefaultPercentAction(percentValue: number): Promise<ActionResult> {
+  return run(
+    () => {
+      updatePricingSettings(getDb(), { defaultAllowedBps: Math.round(percentValue * 100) });
+    },
+    `Your default is now ${percentValue}% of retail. Prices recalculated.`,
+  );
 }

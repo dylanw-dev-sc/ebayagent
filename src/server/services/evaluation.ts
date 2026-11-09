@@ -1,10 +1,11 @@
 import { eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
-import { evaluateListing, type ListingEvaluation, type ListingForEvaluation } from "../../lib/matching/engine";
-import { decidePricing, type PriceOverride, type PricingRule } from "../../lib/pricing/engine";
+import { evaluateListing, type ListingEvaluation, type ListingFacts, type ListingForEvaluation } from "../../lib/matching/engine";
+import { decidePricing, pricingMaterialKeys, type PriceOverride, type PricingRule } from "../../lib/pricing/engine";
+import { findSellerStatedRetail } from "../../lib/pricing/seller-retail";
 import { sizeKey } from "../../lib/matching/size";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
-import { loadEngineContext, type LoadedContext } from "./context";
+import { loadEngineContext, loadPricingSettings, type LoadedContext } from "./context";
 
 export type ListingRow = typeof s.listings.$inferSelect;
 
@@ -130,6 +131,7 @@ export function loadPricingRules(db: AppDb): PricingRule[] {
       id: r.id,
       categoryId: r.categoryId,
       brandId: r.brandId,
+      materialKey: r.materialKey,
       referenceRetailMinor: r.referenceRetailMinor,
       currency: r.currency,
       allowedBps: r.allowedBps,
@@ -150,10 +152,13 @@ export function recomputePricing(db: AppDb, opts: { listingIds?: number[] } = {}
       .all()
       .map((o) => [`${o.source}:${o.externalId}`, o]),
   );
+  const materialNames = new Map(db.select({ key: s.materials.key, name: s.materials.name }).from(s.materials).all().map((m) => [m.key, m.name]));
   const names = {
     brandName: (id: number | null) => (id === null ? null : brandNames.get(id) ?? null),
     categoryName: (id: number | null) => (id === null ? null : categoryNames.get(id) ?? null),
+    materialName: (key: string | null) => (key === null ? null : materialNames.get(key) ?? key),
   };
+  const options = { defaultAllowedBps: loadPricingSettings(db).defaultAllowedBps };
 
   const query = db
     .select({ l: s.listings, e: s.listingEvaluations })
@@ -183,12 +188,15 @@ export function recomputePricing(db: AppDb, opts: { listingIds?: number[] } = {}
           isAuction: (l.buyingOptions ?? []).includes("AUCTION") && !(l.buyingOptions ?? []).includes("FIXED_PRICE"),
           brandId: e?.brandId ?? null,
           categoryId: e?.categoryId ?? null,
+          materialKeys: pricingMaterialKeys((e?.facts as ListingFacts | undefined)?.materialReading),
         },
         rules,
         override,
         names,
+        options,
       );
-      const values = { listingId: l.id, ...d, evaluatedAt: now };
+      const sellerRetail = findSellerStatedRetail({ title: l.title, description: l.descriptionText });
+      const values = { listingId: l.id, ...d, sellerRetailMinor: sellerRetail?.minor ?? null, evaluatedAt: now };
       tx.insert(s.pricingDecisions).values(values).onConflictDoUpdate({ target: s.pricingDecisions.listingId, set: values }).run();
     }
   });

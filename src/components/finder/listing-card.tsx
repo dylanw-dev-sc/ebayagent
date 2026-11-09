@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MATERIAL_LEVEL_LABEL, PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, shippingText, timeAgo } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
+import { formatPctOfRetail } from "@/lib/pricing/engine";
 import type { FeedItem } from "@/server/services/feed";
 import { Badge, cn } from "../ui";
 import { CardActions, SaveButton } from "./card-actions";
@@ -90,6 +91,11 @@ export function ListingCard({ item, detailHref, showReason, priority }: { item: 
             <Badge tone={PRICING_TONE[item.pricingStatus]} title={item.pricingExplanation ?? undefined}>
               {PRICING_LABEL[item.pricingStatus]}
             </Badge>
+            {item.pctOfRetailBps !== null ? (
+              <span className="text-[11.5px] font-semibold text-ink-2 tabular" title={item.pctIsLowerBound ? "Share of the new price — item only, shipping unknown" : "Share of the new price, incl. shipping"}>
+                {formatPctOfRetail(item.pctOfRetailBps, item.pctIsLowerBound)} of retail
+              </span>
+            ) : null}
             {item.maxPriceMinor !== null ? <span className="text-[11.5px] text-ink-3 tabular">max {formatMoney(item.maxPriceMinor, currency)}</span> : null}
           </div>
         ) : null}

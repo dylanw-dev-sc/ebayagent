@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { deleteRuleAction, toggleRuleAction } from "@/app/actions/pricing";
+import { DealsSlider } from "@/components/cost/deals-slider";
 import { RuleForm } from "@/components/cost/rule-form";
 import { CsvImportForm, RuleGrid, type GridValue } from "@/components/cost/rule-grid";
 import { ExpandableRow } from "@/components/expandable-row";
@@ -9,8 +10,8 @@ import { ActionButton, Toggle } from "@/components/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, TabLink, cn } from "@/components/ui";
 import { PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, shippingText } from "@/lib/format";
 import { formatBps, formatMoney, minorToInput } from "@/lib/money";
-import { loadBrands, loadCategories } from "@/server/services/context";
-import { getPricingList, type PricingFilter } from "@/server/services/feed";
+import { loadBrands, loadCategories, loadMaterials, loadPricingSettings } from "@/server/services/context";
+import { getDealsByPctOfRetail, getPricingList, type PricingFilter } from "@/server/services/feed";
 import { listPricingRules } from "@/server/services/pricing";
 import { getSystemStatus } from "@/server/services/status";
 import { requestDb } from "@/server/request";
@@ -31,7 +32,7 @@ export default function CostPage({ searchParams }: PageProps<"/cost">) {
         title="Cost Evaluator"
         description={
           <>
-            Maximum secondhand price = reference retail × allowed %. Actual cost = item price + shipping. Anything above your ceiling is kept out of the price-eligible feed but stays available below. This is a ceiling check, not a bargain rating.
+            What share of the new price would you pay? % of retail = item price + shipping ÷ the reference new price. Your ceiling = reference new price × your allowed %. Anything above it stays available below, marked over ceiling. This is a ceiling check, not a bargain rating.
           </>
         }
       />
@@ -53,11 +54,22 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
   const brandRows = loadBrands(db);
   const categories = categoryRows.map((c) => ({ id: c.id, name: c.name }));
   const brands = brandRows.map((b) => ({ id: b.id, name: b.name }));
+  const materials = loadMaterials(db)
+    .filter((m) => m.kind === "fiber")
+    .map((m) => ({ key: m.key, name: m.name }));
+  const defaultBps = loadPricingSettings(db).defaultAllowedBps;
+  const defaultPercent = defaultBps / 100;
+  const deals = getDealsByPctOfRetail(db, source);
   const enabledCategoryIds = new Set(categoryRows.filter((c) => c.enabled).map((c) => c.id));
   const enabledBrandIds = new Set(brandRows.filter((b) => b.enabled).map((b) => b.id));
   const gridMode = sp.rules === "grid";
   const gridCells: Record<string, GridValue> = Object.fromEntries(
-    rules.map((r) => [`${r.categoryId}_${r.brandId ?? "all"}`, { retail: minorToInput(r.referenceRetailMinor), percent: formatBps(r.allowedBps).replace("%", ""), active: r.active }]),
+    rules
+      .filter((r) => r.materialKey === null) // the grid holds the general (any-material) prices
+      .map((r) => [
+        `${r.categoryId}_${r.brandId ?? "all"}`,
+        { retail: minorToInput(r.referenceRetailMinor), percent: r.allowedBps === null ? "" : formatBps(r.allowedBps).replace("%", ""), active: r.active },
+      ]),
   );
   const lists = Object.fromEntries(LISTS.map((l) => [l.key, getPricingList(db, source, l.key, { onlyRelevant: !includeAll, limit: l.key === list ? 200 : 0 })])) as Record<
     PricingFilter,
@@ -79,6 +91,8 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
 
   return (
     <>
+      <DealsSlider items={deals} defaultPercent={defaultPercent} />
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {LISTS.map((l) => (
           <Link key={l.key} href={qs({ list: l.key })} scroll={false} className={cn("card p-5 transition hover:border-line-strong", list === l.key && "border-ink")}>
@@ -95,8 +109,10 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
           title="Pricing rules"
           description={
             <>
-              Precedence: <strong className="font-semibold text-ink">1.</strong> product-specific override (set on a listing) → <strong className="font-semibold text-ink">2.</strong> brand + category rule →{" "}
-              <strong className="font-semibold text-ink">3.</strong> category-wide rule. Retail baselines are yours to enter — the app never invents them. Changing a rule recalculates stored listings immediately, without a new scan.
+              Where a listing&apos;s new price comes from, first match wins: <strong className="font-semibold text-ink">1.</strong> your price for that listing →{" "}
+              <strong className="font-semibold text-ink">2.</strong> your brand + material rule (e.g. Brunello Cucinelli cashmere sweaters) → <strong className="font-semibold text-ink">3.</strong> your brand rule →{" "}
+              <strong className="font-semibold text-ink">4.</strong> a typical new price found online → <strong className="font-semibold text-ink">5.</strong> your category + material rule →{" "}
+              <strong className="font-semibold text-ink">6.</strong> your category-wide rule. The app never invents prices. Leave a % blank to use your default ({defaultPercent}%). Changes recalculate stored listings immediately, without a new scan.
             </>
           }
         />
@@ -122,7 +138,12 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
           <CsvImportForm />
         </div>
         {gridMode ? (
-          <RuleGrid categories={categories.filter((c) => enabledCategoryIds.has(c.id))} brands={brands.filter((b) => enabledBrandIds.has(b.id))} cells={gridCells} />
+          <RuleGrid
+            categories={categories.filter((c) => enabledCategoryIds.has(c.id))}
+            brands={brands.filter((b) => enabledBrandIds.has(b.id))}
+            cells={gridCells}
+            defaultPercent={String(defaultPercent)}
+          />
         ) : (
         <div className="card overflow-hidden">
           {rules.length ? (
@@ -149,11 +170,17 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
                         <>
                           <td className="px-4 py-3">
                             <p className="font-medium text-ink">{r.categoryName}</p>
-                            <p className="text-xs text-ink-3">{r.brandName ?? "All brands — category-wide"}</p>
+                            <p className="text-xs text-ink-3">
+                              {r.brandName ?? "All brands — category-wide"}
+                              {r.materialName ? ` · only ${r.materialName.toLowerCase()}` : ""}
+                            </p>
                           </td>
                           <td className="px-4 py-3 tabular">{formatMoney(r.referenceRetailMinor, r.currency)}</td>
                           <td className="max-w-48 px-4 py-3 text-ink-2">{r.retailSource ?? <span className="text-ink-3">—</span>}</td>
-                          <td className="px-4 py-3 tabular">{formatBps(r.allowedBps)}</td>
+                          <td className="px-4 py-3 tabular">
+                            {formatBps(r.effectiveBps)}
+                            {r.allowedBps === null ? <span className="block text-xs text-ink-3">your default</span> : null}
+                          </td>
                           <td className="px-4 py-3 font-semibold tabular">{formatMoney(r.maxPriceMinor, r.currency)}</td>
                           <td className="px-4 py-3">
                             <Toggle checked={r.active} onChange={toggleRuleAction.bind(null, r.id)} label={`Rule active: ${r.categoryName} ${r.brandName ?? ""}`} size="sm" />
@@ -166,12 +193,15 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
                             mode="edit"
                             categories={categories}
                             brands={brands}
+                            materials={materials}
+                            defaultPercent={defaultPercent}
                             initial={{
                               id: r.id,
                               categoryId: r.categoryId,
                               brandId: r.brandId,
+                              materialKey: r.materialKey,
                               retail: minorToInput(r.referenceRetailMinor),
-                              percent: formatBps(r.allowedBps).replace("%", ""),
+                              percent: r.allowedBps === null ? "" : formatBps(r.allowedBps).replace("%", ""),
                               retailSource: r.retailSource,
                               notes: r.notes,
                               active: r.active,
@@ -191,13 +221,13 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
             <div className="px-5 py-8 text-center">
               <p className="font-display text-xl font-semibold">No pricing rules yet</p>
               <p className="mx-auto mt-1 max-w-lg text-sm text-ink-2">
-                Until a rule applies, listings stay in “Needs pricing review”. Start with a category-wide rule (e.g. your typical retail for a shirt), then add brand-specific rules where retail differs.
+                Until a new price applies, listings stay in “Needs pricing review”. Add brand prices in the grid or by CSV, set a price on a listing, or use a seller&apos;s stated retail. Material rules (e.g. cashmere vs cotton sweaters) refine a brand&apos;s price.
               </p>
             </div>
           )}
           <div className="border-t border-line bg-canvas/60 p-4">
             <p className="mb-3 text-sm font-semibold text-ink">Add a rule</p>
-            <RuleForm mode="create" categories={categories} brands={brands} />
+            <RuleForm mode="create" categories={categories} brands={brands} materials={materials} defaultPercent={defaultPercent} />
           </div>
         </div>
         )}

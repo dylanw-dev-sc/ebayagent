@@ -14,18 +14,21 @@ export function RuleGrid({
   categories,
   brands,
   cells,
+  defaultPercent,
 }: {
   categories: Array<{ id: number; name: string }>;
   brands: Array<{ id: number; name: string }>;
   cells: Record<string, GridValue>;
+  /** Your default allowed % (used by blank % cells and by online prices). */
+  defaultPercent: string;
 }) {
   const rows: Array<{ id: number | null; name: string }> = [{ id: null, name: "All brands (category-wide)" }, ...brands];
   return (
     <ActionForm action={saveRuleGridAction} className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="w-40">
-          <span className="label">Default allowed %</span>
-          <input name="defaultPercent" inputMode="decimal" placeholder="e.g. 40" className="field tabular" />
+        <label className="w-44">
+          <span className="label">Your default %</span>
+          <input name="defaultPercent" inputMode="decimal" defaultValue={defaultPercent} placeholder="e.g. 33" className="field tabular" />
         </label>
         <label className="min-w-56 flex-1">
           <span className="label">Retail-price source (for rules you change)</span>
@@ -34,8 +37,8 @@ export function RuleGrid({
         <SubmitButton>Save grid</SubmitButton>
       </div>
       <p className="hint">
-        Each cell is a reference retail price (USD) and an allowed % of retail. A blank % uses the default %. Clearing a retail price removes that rule. Retail prices are
-        always yours — nothing is filled in for you.
+        Each cell is a reference retail (new) price in USD and an allowed % of retail. A blank % uses your default %, which also applies to online prices. Clearing a retail
+        price removes that rule. Prices for one material only (e.g. cashmere sweaters) are added with the rule form or by CSV.
       </p>
       <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full min-w-[720px] text-left text-sm">

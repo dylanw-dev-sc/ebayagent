@@ -160,6 +160,7 @@ export function SortSelect() {
         <option value="newest">Newly listed</option>
         <option value="price_asc">Lowest total price</option>
         <option value="price_desc">Highest total price</option>
+        <option value="pct">Lowest % of retail</option>
         <option value="material">Fabric preference</option>
         <option value="color">Color preference</option>
       </select>

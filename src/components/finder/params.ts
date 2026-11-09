@@ -9,7 +9,7 @@ const posInt = (v: string | undefined) => {
 };
 
 const VIEWS: FeedView[] = ["matches", "review", "excluded", "all", "saved", "dismissed"];
-const SORTS: FeedSort[] = ["newest", "price_asc", "price_desc", "material", "color"];
+const SORTS: FeedSort[] = ["newest", "price_asc", "price_desc", "pct", "material", "color"];
 const PRICING: PricingFilter[] = ["eligible", "over_ceiling", "needs_review"];
 
 export const PAGE_SIZE = 40;

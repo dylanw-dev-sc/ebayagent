@@ -1,7 +1,7 @@
 "use server";
 
 import { getDb } from "@/server/db/client";
-import { int, money, optStr, percent, type ActionResult } from "@/server/form";
+import { int, money, optStr, percent, str, type ActionResult } from "@/server/form";
 import { ValidationError } from "@/server/services/preferences";
 import { clearPriceOverride, setPriceOverride } from "@/server/services/pricing";
 import { setUserStateForListing } from "@/server/services/user-state";
@@ -28,12 +28,29 @@ export async function setPriceOverrideAction(_prev: ActionResult | null, fd: For
     const listingId = int(fd, "listingId");
     if (!listingId) throw new ValidationError("Missing listing.");
     const retail = money(fd, "retail");
-    const bps = percent(fd, "percent");
     if (retail === null) throw new ValidationError("Enter the reference retail price, e.g. 1450 or 1450.00.");
-    if (bps === null) throw new ValidationError("Enter the allowed percentage, e.g. 35.");
+    const percentText = str(fd, "percent");
+    const bps = percentText === "" ? null : percent(fd, "percent");
+    if (percentText !== "" && bps === null) throw new ValidationError("Enter the allowed percentage, e.g. 33 — or leave it blank to use your default.");
     const { source, externalId } = listingKey(listingId);
-    setPriceOverride(getDb(), source, externalId, { referenceRetailMinor: retail, allowedBps: bps, retailSource: optStr(fd, "source"), notes: optStr(fd, "notes") });
+    setPriceOverride(getDb(), source, externalId, {
+      referenceRetailMinor: retail,
+      allowedBps: bps,
+      retailSource: optStr(fd, "source"),
+      ...(fd.has("notes") ? { notes: optStr(fd, "notes") } : {}),
+    });
   }, "Override saved and price eligibility recalculated.");
+}
+
+/** Use the retail price the seller states in the listing, for this listing only (an unverified claim). */
+export async function useSellerRetailAction(listingId: number): Promise<ActionResult> {
+  return run(() => {
+    const db = getDb();
+    const { source, externalId } = listingKey(listingId);
+    const d = db.select({ seller: s.pricingDecisions.sellerRetailMinor }).from(s.pricingDecisions).where(eq(s.pricingDecisions.listingId, listingId)).get();
+    if (!d?.seller) throw new ValidationError("This listing doesn't state a retail price.");
+    setPriceOverride(db, source, externalId, { referenceRetailMinor: d.seller, allowedBps: null, retailSource: "Seller-stated retail (unverified)" });
+  }, "Using the seller's stated retail for this listing (unverified). Prices recalculated.");
 }
 
 export async function clearPriceOverrideAction(listingId: number): Promise<ActionResult> {

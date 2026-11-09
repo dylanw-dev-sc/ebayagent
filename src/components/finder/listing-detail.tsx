@@ -1,8 +1,9 @@
 import { CircleAlert, CircleCheck, ExternalLink, Info, CircleX } from "lucide-react";
-import { clearPriceOverrideAction, setPriceOverrideAction } from "@/app/actions/listings";
+import { clearPriceOverrideAction, setPriceOverrideAction, useSellerRetailAction } from "@/app/actions/listings";
 import { MATERIAL_LEVEL_LABEL, PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, formatDateTime, shippingText, timeAgo } from "@/lib/format";
 import type { ListingFacts, Reason } from "@/lib/matching/engine";
 import { formatBps, formatMoney, minorToInput } from "@/lib/money";
+import { formatPctOfRetail, RULE_LEVEL_LABEL, type RuleLevel } from "@/lib/pricing/engine";
 import type { getListingDetail } from "@/server/services/feed";
 import { ActionButton, ActionForm, SubmitButton } from "../forms";
 import { ColorSwatch } from "../color-swatch";
@@ -214,18 +215,45 @@ export function ListingDetail({
         </div>
         <p className="mt-2 text-sm leading-6 text-ink-2">{p?.explanation ?? "Not evaluated yet."}</p>
         {p && p.maxPriceMinor !== null ? (
-          <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <KeyValue label="Rule">{p.ruleLevel === "override" ? "Product override" : p.ruleLevel === "brand_category" ? "Brand + category" : "Category-wide"}</KeyValue>
-            <KeyValue label="Reference retail">{formatMoney(p.referenceRetailMinor, currency)}</KeyValue>
-            <KeyValue label="Allowed">{formatBps(p.allowedBps)}</KeyValue>
+          <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <KeyValue label="% of retail">
+              <span className="text-lg font-semibold tabular">{formatPctOfRetail(p.pctOfRetailBps, p.pctIsLowerBound)}</span>
+              {p.pctIsLowerBound ? <span className="block text-xs text-ink-3">item only; shipping unknown</span> : null}
+            </KeyValue>
+            <KeyValue label="New price">
+              {formatMoney(p.referenceRetailMinor, currency)}
+              <span className="block text-xs text-ink-3">{p.ruleLevel ? RULE_LEVEL_LABEL[p.ruleLevel as RuleLevel] ?? p.ruleLevel : "—"}</span>
+            </KeyValue>
+            <KeyValue label="Allowed">
+              {formatBps(p.allowedBps)}
+              {p.usesDefaultBps ? <span className="block text-xs text-ink-3">your default</span> : null}
+            </KeyValue>
             <KeyValue label="Max secondhand">{formatMoney(p.maxPriceMinor, currency)}</KeyValue>
+            <KeyValue label="Retail source">
+              <span className="text-sm">{p.ruleLevel === "override" ? d.override?.retailSource ?? "—" : d.ruleSource ?? "—"}</span>
+            </KeyValue>
           </dl>
+        ) : null}
+        {p?.sellerRetailMinor ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-canvas px-4 py-3">
+            <p className="text-sm text-ink-2">
+              The seller says retail is <strong className="font-semibold text-ink tabular">{formatMoney(p.sellerRetailMinor, currency)}</strong>
+              <span className="text-ink-3"> — their claim, not verified.</span>
+            </p>
+            {p.ruleLevel === "override" && d.override?.referenceRetailMinor === p.sellerRetailMinor ? (
+              <span className="text-xs text-ink-3">In use for this listing</span>
+            ) : (
+              <ActionButton action={useSellerRetailAction.bind(null, l.id)} variant="secondary">
+                Use it for this listing
+              </ActionButton>
+            )}
+          </div>
         ) : null}
         <p className="mt-3 text-xs text-ink-3">Price eligibility only checks your ceiling — it is not a bargain or market-value rating.</p>
 
         <div className="mt-5 rounded-lg border border-line bg-canvas p-4">
-          <p className="text-sm font-semibold text-ink">Product-specific override</p>
-          <p className="mt-0.5 text-xs text-ink-3">Takes precedence over brand/category and category-wide rules for this listing only.</p>
+          <p className="text-sm font-semibold text-ink">Your price for this listing</p>
+          <p className="mt-0.5 text-xs text-ink-3">Overrides every other new price for this listing only. Leave % blank to use your default ({d.defaultPercent}%).</p>
           <ActionForm action={setPriceOverrideAction} className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <input type="hidden" name="listingId" value={l.id} />
             <label className="col-span-1">
@@ -234,7 +262,13 @@ export function ListingDetail({
             </label>
             <label className="col-span-1">
               <span className="label">Allowed %</span>
-              <input name="percent" inputMode="decimal" required defaultValue={d.override ? formatBps(d.override.allowedBps).replace("%", "") : p?.allowedBps ? formatBps(p.allowedBps).replace("%", "") : ""} placeholder="e.g. 35" className="field" />
+              <input
+                name="percent"
+                inputMode="decimal"
+                defaultValue={d.override?.allowedBps ? formatBps(d.override.allowedBps).replace("%", "") : ""}
+                placeholder={`default ${d.defaultPercent}`}
+                className="field"
+              />
             </label>
             <label className="col-span-2">
               <span className="label">Retail source</span>

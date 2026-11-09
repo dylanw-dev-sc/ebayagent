@@ -13,7 +13,7 @@ import { buildEngineContext, type EngineContext } from "../../lib/matching/engin
 import { resolveProfile, type PersonalDefaults, type ProfileOverrides, type ResolvedProfile } from "../../lib/profiles/resolve";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
-import { seedDefaults, seedScanSettings, type DefaultsSetting, type ScanSettings } from "../db/seed-data";
+import { seedDefaults, seedPricingSettings, seedScanSettings, type DefaultsSetting, type PricingSettings, type ScanSettings } from "../db/seed-data";
 
 /** Loads stored preferences into the shapes the pure engines consume. */
 
@@ -120,7 +120,11 @@ export function loadScanSettings(db: AppDb): ScanSettings {
   return getSetting(db, "scan", seedScanSettings);
 }
 
-export function saveSetting(db: AppDb, key: "defaults" | "scan", value: object): void {
+export function loadPricingSettings(db: AppDb): PricingSettings {
+  return getSetting(db, "pricing", seedPricingSettings);
+}
+
+export function saveSetting(db: AppDb, key: "defaults" | "scan" | "pricing", value: object): void {
   db.insert(s.settings)
     .values({ key, value })
     .onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } })

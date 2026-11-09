@@ -3,11 +3,11 @@ import type { ListingSource, MatchState } from "../../lib/domain/types";
 import type { ListingFacts, Reason } from "../../lib/matching/engine";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
-import { loadScanSettings } from "./context";
+import { loadPricingSettings, loadScanSettings } from "./context";
 import { getPriceOverride } from "./pricing";
 
 export type FeedView = "matches" | "review" | "excluded" | "all" | "saved" | "dismissed";
-export type FeedSort = "newest" | "price_asc" | "price_desc" | "material" | "color";
+export type FeedSort = "newest" | "price_asc" | "price_desc" | "pct" | "material" | "color";
 export type PricingFilter = "eligible" | "over_ceiling" | "needs_review";
 
 export interface FeedFilters {
@@ -59,6 +59,10 @@ export interface FeedItem {
   pricingStatus: "eligible" | "over_ceiling" | "needs_review" | null;
   pricingExplanation: string | null;
   maxPriceMinor: number | null;
+  /** Total ÷ reference new price (basis points, rounded up); null when there's no reference price. */
+  pctOfRetailBps: number | null;
+  /** Shipping unknown: the % covers the item price only. */
+  pctIsLowerBound: boolean;
   saved: boolean;
   dismissed: boolean;
   reviewed: boolean;
@@ -118,6 +122,8 @@ function feedOrder(f: Pick<FeedFilters, "sort">) {
     ? [asc(unknownTotalLast), asc(totalOrItem), desc(recency), desc(s.listings.id)]
     : f.sort === "price_desc"
       ? [asc(unknownTotalLast), desc(totalOrItem), desc(recency), desc(s.listings.id)]
+      : f.sort === "pct" // lowest share of retail first; listings without a reference price last
+        ? [asc(sql`case when ${s.pricingDecisions.pctOfRetailBps} is null then 1 else 0 end`), asc(s.pricingDecisions.pctOfRetailBps), desc(recency), desc(s.listings.id)]
       : f.sort === "material" // fabric first; your color preferences break ties
         ? [desc(s.listingEvaluations.materialScore), desc(s.listingEvaluations.colorScore), desc(recency), desc(s.listings.id)]
         : f.sort === "color" // color first; fabric breaks ties
@@ -220,6 +226,8 @@ export function getFeed(db: AppDb, f: FeedFilters, source: ListingSource) {
     pricingStatus: p?.status ?? null,
     pricingExplanation: p?.explanation ?? null,
     maxPriceMinor: p?.maxPriceMinor ?? null,
+    pctOfRetailBps: p?.pctOfRetailBps ?? null,
+    pctIsLowerBound: p?.pctIsLowerBound ?? false,
     saved: u?.saved ?? false,
     dismissed: u?.dismissed ?? false,
     reviewed: u?.reviewed ?? false,
@@ -296,7 +304,10 @@ export function getListingDetail(db: AppDb, id: number) {
     .all()
     .map((r) => ({ profileId: r.m.profileId, name: r.name, state: r.m.state, summary: r.m.summary, reasons: r.m.reasons as Reason[] }));
   const staleMs = loadScanSettings(db).staleAfterHours * 3_600_000;
+  const ruleSource = p?.ruleId ? db.select({ src: s.pricingRules.retailSource }).from(s.pricingRules).where(eq(s.pricingRules.id, p.ruleId)).get()?.src ?? null : null;
   return {
+    defaultPercent: loadPricingSettings(db).defaultAllowedBps / 100,
+    ruleSource,
     listing: l,
     evaluation: e,
     facts: e.facts as ListingFacts,
@@ -343,6 +354,45 @@ export function getPricingList(db: AppDb, source: ListingSource, status: Pricing
       ruleLevel: p?.ruleLevel ?? null,
       reason: p?.reason ?? null,
       explanation: p?.explanation ?? "",
+      pctOfRetailBps: p?.pctOfRetailBps ?? null,
+      pctIsLowerBound: p?.pctIsLowerBound ?? false,
     })),
   };
+}
+
+/**
+ * Matches & needs-review listings (not dismissed, in the listing window) that have a
+ * % of retail — lowest share first. Feeds the deals slider, which filters on the client.
+ */
+export function getDealsByPctOfRetail(db: AppDb, source: ListingSource, opts: { limit?: number } = {}) {
+  const conds: SQL[] = [
+    eq(s.listings.source, source),
+    sql`${postedAt} >= ${listingWindowStart(db).getTime()}`,
+    sql`${s.listingEvaluations.state} in ('match', 'review')`,
+    sql`coalesce(${s.listingUserStates.dismissed}, 0) = 0`,
+    sql`${s.pricingDecisions.pctOfRetailBps} is not null`,
+  ];
+  const brandNames = new Map(db.select({ id: s.brands.id, name: s.brands.name }).from(s.brands).all().map((b) => [b.id, b.name]));
+  const categoryNames = new Map(db.select({ id: s.categories.id, name: s.categories.name }).from(s.categories).all().map((c) => [c.id, c.name]));
+  const rows = joined(db)
+    .where(and(...conds))
+    .orderBy(asc(s.pricingDecisions.pctOfRetailBps), desc(s.listings.id))
+    .limit(opts.limit ?? 500)
+    .all();
+  return rows.map(({ l, e, p }) => ({
+    id: l.id,
+    title: l.title,
+    imageUrl: l.imageUrl,
+    isFixture: l.source === "fixture",
+    brandName: e.brandId !== null ? brandNames.get(e.brandId) ?? null : null,
+    categoryName: e.categoryId !== null ? categoryNames.get(e.categoryId) ?? null : null,
+    state: e.state,
+    totalMinor: p?.totalMinor ?? null,
+    priceMinor: l.priceMinor,
+    currency: l.currency ?? "USD",
+    referenceRetailMinor: p?.referenceRetailMinor ?? null,
+    ruleLevel: p?.ruleLevel ?? null,
+    pctOfRetailBps: p?.pctOfRetailBps ?? 0,
+    pctIsLowerBound: p?.pctIsLowerBound ?? false,
+  }));
 }

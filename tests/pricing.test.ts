@@ -7,8 +7,8 @@ const names = {
   categoryName: (id: number | null) => (id === 10 ? "Shirts" : id === 20 ? "Jackets & Outerwear" : null),
 };
 
-const categoryRule: PricingRule = { id: 100, categoryId: 10, brandId: null, referenceRetailMinor: 15000, currency: "USD", allowedBps: 4000, retailSource: "user", active: true };
-const brandRule: PricingRule = { id: 101, categoryId: 10, brandId: 1, referenceRetailMinor: 20000, currency: "USD", allowedBps: 4000, retailSource: "user", active: true };
+const categoryRule: PricingRule = { id: 100, categoryId: 10, brandId: null, materialKey: null, referenceRetailMinor: 15000, currency: "USD", allowedBps: 4000, retailSource: "user", active: true };
+const brandRule: PricingRule = { id: 101, categoryId: 10, brandId: 1, materialKey: null, referenceRetailMinor: 20000, currency: "USD", allowedBps: 4000, retailSource: "user", active: true };
 
 const input = (p: Partial<PricingInput> = {}): PricingInput => ({
   priceMinor: 6500,

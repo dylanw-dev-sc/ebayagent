@@ -14,6 +14,7 @@ export interface RuleDefaults {
   id?: number;
   categoryId?: number;
   brandId?: number | null;
+  materialKey?: string | null;
   retail?: string;
   percent?: string;
   retailSource?: string | null;
@@ -22,11 +23,25 @@ export interface RuleDefaults {
 }
 
 /** Add / edit a pricing rule with a live "maximum secondhand price" preview. */
-export function RuleForm({ categories, brands, initial, mode }: { categories: Option[]; brands: Option[]; initial?: RuleDefaults; mode: "create" | "edit" }) {
+export function RuleForm({
+  categories,
+  brands,
+  materials,
+  defaultPercent,
+  initial,
+  mode,
+}: {
+  categories: Option[];
+  brands: Option[];
+  materials: Array<{ key: string; name: string }>;
+  defaultPercent: number;
+  initial?: RuleDefaults;
+  mode: "create" | "edit";
+}) {
   const [retail, setRetail] = useState(initial?.retail ?? "");
   const [percent, setPercent] = useState(initial?.percent ?? "");
   const retailMinor = parseMoneyToMinor(retail);
-  const bps = parsePercentToBps(percent);
+  const bps = percent.trim() === "" ? Math.round(defaultPercent * 100) : parsePercentToBps(percent);
   const preview = retailMinor !== null && bps !== null && bps > 0 && bps <= 10000 ? computeCeilingMinor(retailMinor, bps) : null;
 
   return (
@@ -45,7 +60,7 @@ export function RuleForm({ categories, brands, initial, mode }: { categories: Op
           ))}
         </select>
       </label>
-      <label className="col-span-2 md:col-span-3">
+      <label className="col-span-2 md:col-span-4">
         <span className="label">Brand</span>
         <select name="brandId" defaultValue={initial?.brandId ?? ""} className="field">
           <option value="">All brands (category-wide)</option>
@@ -56,19 +71,30 @@ export function RuleForm({ categories, brands, initial, mode }: { categories: Op
           ))}
         </select>
       </label>
+      <label className="col-span-2 md:col-span-2">
+        <span className="label">Material</span>
+        <select name="materialKey" defaultValue={initial?.materialKey ?? ""} className="field">
+          <option value="">Any material</option>
+          {materials.map((m) => (
+            <option key={m.key} value={m.key}>
+              Only {m.name.toLowerCase()}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="md:col-span-2">
         <span className="label">Reference retail (USD)</span>
         <input name="retail" inputMode="decimal" required value={retail} onChange={(e) => setRetail(e.target.value)} placeholder="e.g. 495" className="field tabular" />
       </label>
       <label className="md:col-span-2">
         <span className="label">Allowed % of retail</span>
-        <input name="percent" inputMode="decimal" required value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="e.g. 40" className="field tabular" />
+        <input name="percent" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} placeholder={`default ${defaultPercent}`} className="field tabular" />
       </label>
       <label className="col-span-2 md:col-span-3">
         <span className="label">Retail-price source</span>
         <input name="retailSource" defaultValue={initial?.retailSource ?? ""} placeholder="e.g. brand site, Oct 2026" className="field" />
       </label>
-      <label className="col-span-2 md:col-span-7">
+      <label className="col-span-2 md:col-span-4">
         <span className="label">Notes</span>
         <input name="notes" defaultValue={initial?.notes ?? ""} placeholder="Optional" className="field" />
       </label>

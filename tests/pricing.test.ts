@@ -80,7 +80,7 @@ describe("missing shipping information", () => {
     const d = decidePricing(input({ shippingStatus: "unknown", shippingMinor: null }), [brandRule], null, names);
     expect(d.status).toBe("needs_review");
     expect(d.reason).toBe("shipping_unknown");
-    expect(d.totalMinor).toBeNull();
+    expect(d.totalMinor).toBeNull(); // total is unknown — never computed as if shipping were free
     expect(d.explanation).toMatch(/never assumed to be free/);
   });
   it("calculated shipping is unknown too", () => {
@@ -99,6 +99,9 @@ describe("missing retail baselines", () => {
     expect(d.status).toBe("needs_review");
     expect(d.reason).toBe("no_rule");
     expect(d.explanation).toContain("Kiton / Jackets & Outerwear");
+  });
+  it("still reports the actual total cost when no rule applies", () => {
+    expect(decidePricing(input({ categoryId: 20, brandId: 2 }), [], null, names).totalMinor).toBe(7300);
   });
   it("unknown category → needs pricing review", () => {
     expect(decidePricing(input({ categoryId: null }), [categoryRule], null, names).reason).toBe("no_category");

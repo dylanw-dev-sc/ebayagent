@@ -194,9 +194,9 @@ export function loadEngineContext(db: AppDb): LoadedContext {
     .update(
       JSON.stringify({
         v: 1,
-        brands: brands.map(({ notes: _n, ...b }) => b),
+        brands: brands.map(({ notes, ...b }) => b),
         categories,
-        materials: materials.map(({ notes: _n, sortOrder: _o, ...m }) => m),
+        materials: materials.map(({ notes, sortOrder, ...m }) => m),
         conditions,
         profiles: evalProfiles,
       }),

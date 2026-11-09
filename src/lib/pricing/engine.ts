@@ -90,6 +90,15 @@ export function selectRule(
   return null;
 }
 
+/** Actual Listing Cost = Item Price + Shipping — only when both are known and in one currency. */
+export function totalCostMinor(input: Pick<PricingInput, "priceMinor" | "currency" | "shippingStatus" | "shippingMinor" | "shippingCurrency">): number | null {
+  if (input.priceMinor === null) return null;
+  if (input.shippingStatus === "free") return input.priceMinor;
+  if (input.shippingStatus !== "fixed" || input.shippingMinor === null) return null;
+  if (input.shippingCurrency && input.currency && input.shippingCurrency !== input.currency) return null;
+  return input.priceMinor + input.shippingMinor;
+}
+
 export function decidePricing(input: PricingInput, rules: PricingRule[], override: PriceOverride | null, names: NamedLookup): PricingDecision {
   const currency = input.currency ?? "USD";
   const base: Omit<PricingDecision, "status" | "reason" | "explanation"> = {
@@ -100,7 +109,7 @@ export function decidePricing(input: PricingInput, rules: PricingRule[], overrid
     maxPriceMinor: null,
     itemMinor: input.priceMinor,
     shippingMinor: input.shippingStatus === "free" ? 0 : input.shippingMinor,
-    totalMinor: null,
+    totalMinor: totalCostMinor(input),
     currency,
   };
 

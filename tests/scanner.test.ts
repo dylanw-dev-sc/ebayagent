@@ -273,6 +273,29 @@ describe("errors, rate limits, empty results and interrupted scans", () => {
     expect(r.errors.some((e) => e.code === "budget")).toBe(true);
   });
 
+  it("refreshes stale saved listings that searches no longer return, and deletes them if ended", async () => {
+    const { db } = memoryDb();
+    await scan(db, fixture(1));
+    setUserState(db, "fixture", "FX-102", { saved: true });
+    setUserState(db, "fixture", "FX-104", { saved: true });
+    const old = new Date(Date.now() - 8 * 3_600_000);
+    db.update(s.listings).set({ lastSeenAt: old }).where(eq(s.listings.source, "fixture")).run();
+    class DetailsOnly extends FixtureProvider {
+      async search() {
+        return { items: [], total: 0, hasMore: false, nextOffset: null, warnings: [] };
+      }
+      async getItem(externalId: string): Promise<ItemDetailResult> {
+        if (externalId === "FX-104") return { externalId, listing: null, ended: true };
+        return super.getItem(externalId);
+      }
+    }
+    const r = await scan(db, new DetailsOnly({ batch: 1, now: NOW }));
+    expect(r.refreshedSaved).toBe(1);
+    expect(listingByExt(db, "FX-102")!.lastSeenAt.getTime()).toBeGreaterThan(old.getTime());
+    expect(listingByExt(db, "FX-104")).toBeUndefined(); // ended → content deleted
+    expect(getUserState(db, "fixture", "FX-104")!.saved).toBe(true); // decision kept
+  });
+
   it("deletes listings that the source reports as ended", async () => {
     const { db } = memoryDb();
     class EndingProvider extends FixtureProvider {

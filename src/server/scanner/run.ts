@@ -38,6 +38,8 @@ export interface ScanResult {
   reviewNew: number;
   rejectedNew: number;
   purged: number;
+  /** Saved listings re-checked via item details because their data was stale. */
+  refreshedSaved: number;
   errors: ScanErrorEntry[];
   rateLimited: boolean;
 }
@@ -124,6 +126,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     reviewNew: 0,
     rejectedNew: 0,
     purged: 0,
+    refreshedSaved: 0,
     errors: [],
     rateLimited: false,
   };
@@ -308,6 +311,48 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
       }
     }
 
+    // --- Keep saved items fresh: incremental searches only revisit recent listings, so
+    // re-check stale saved listings directly (eBay: displayed data ≤ 6 h old unless disclosed;
+    // content no longer available must be deleted).
+    if (!fatal) {
+      const staleCutoff = new Date(now().getTime() - settings.staleAfterHours * 3_600_000);
+      const staleSaved = db
+        .select({ l: s.listings })
+        .from(s.listings)
+        .innerJoin(s.listingUserStates, and(eq(s.listingUserStates.source, s.listings.source), eq(s.listingUserStates.externalId, s.listings.externalId)))
+        .where(and(eq(s.listings.source, provider.id === "fixture" ? "fixture" : "ebay"), eq(s.listingUserStates.saved, true), lt(s.listings.lastSeenAt, staleCutoff)))
+        .limit(Math.max(0, settings.detailFetchLimit))
+        .all()
+        .map((r) => r.l)
+        .filter((l) => !seen.has(l.externalId));
+      for (const row of staleSaved) {
+        if (budgetLeft() <= 0) {
+          budgetExhausted = true;
+          break;
+        }
+        try {
+          const detail = await provider.getItem(row.externalId);
+          r.detailCalls++;
+          if (detail.ended) {
+            deleteListingByExternalId(db, row.source, row.externalId);
+            continue;
+          }
+          if (detail.listing) {
+            const res = upsertListing(db, detail.listing, null, now());
+            r.refreshedSaved++;
+            if (res.kind === "updated") touched.add(res.id);
+          }
+        } catch (err) {
+          r.detailCalls++;
+          recordError(`refresh saved ${row.externalId}`, err);
+          if (isFatalForScan(err)) {
+            fatal = true;
+            break;
+          }
+        }
+      }
+    }
+
     // --- Evaluate new/changed listings (plus anything stale under current rules).
     const touchedIds = Array.from(touched);
     const evaluated = reevaluateListings(db, { listingIds: touchedIds, context: ctx });
@@ -353,7 +398,8 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         errorCount: r.errors.length,
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,
-        notes: budgetExhausted ? "Stopped at the daily call budget." : null,
+        notes:
+          [budgetExhausted ? "Stopped at the daily call budget." : null, r.refreshedSaved ? `Refreshed ${r.refreshedSaved} saved listing(s).` : null].filter(Boolean).join(" ") || null,
       })
       .where(eq(s.scanRuns.id, run.id))
       .run();

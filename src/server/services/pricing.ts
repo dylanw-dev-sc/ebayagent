@@ -3,7 +3,7 @@ import type { ListingSource } from "../../lib/domain/types";
 import { computeCeilingMinor } from "../../lib/money";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
-import type { PricingSettings } from "../db/seed-data";
+import { MAX_MONTHLY_LOOKUPS, type PricingSettings } from "../db/seed-data";
 import { loadPricingSettings, saveSetting } from "./context";
 import { recomputePricing } from "./evaluation";
 import { ValidationError } from "./preferences";
@@ -185,6 +185,13 @@ export function updatePricingSettings(db: AppDb, patch: Partial<PricingSettings>
   if (!Number.isInteger(next.defaultAllowedBps) || next.defaultAllowedBps < 100 || next.defaultAllowedBps > 10000) {
     throw new ValidationError("Your default % must be between 1% and 100%.");
   }
+  if (!Number.isInteger(next.monthlyLookupCap) || next.monthlyLookupCap < 0 || next.monthlyLookupCap > MAX_MONTHLY_LOOKUPS) {
+    throw new ValidationError(`The monthly lookup cap must be a whole number from 0 to ${MAX_MONTHLY_LOOKUPS.toLocaleString()} (Brave's free monthly credit).`);
+  }
+  if (!Number.isInteger(next.lookupsPerScan) || next.lookupsPerScan < 0 || next.lookupsPerScan > 200) {
+    throw new ValidationError("Lookups per scan must be a whole number from 0 to 200.");
+  }
+  next.blockedDomains = [...new Set(next.blockedDomains.map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")).filter(Boolean))];
   saveSetting(db, "pricing", next);
   recomputePricing(db);
   return next;

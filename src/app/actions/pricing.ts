@@ -1,13 +1,16 @@
 "use server";
 
 import { getDb } from "@/server/db/client";
-import { bool, int, money, optStr, percent, str, type ActionResult } from "@/server/form";
+import { bool, int, list, money, optStr, percent, str, type ActionResult } from "@/server/form";
 import { ValidationError } from "@/server/services/preferences";
 import { createPricingRule, deletePricingRule, updatePricingRule, updatePricingSettings } from "@/server/services/pricing";
 import { refresh } from "next/cache";
 import { parseMoneyToMinor, parsePercentToBps } from "@/lib/money";
 import { loadBrands, loadCategories, loadPricingSettings } from "@/server/services/context";
 import { describeBulkResult, importRulesCsv, saveRuleGrid, type GridCell } from "@/server/services/pricing-bulk";
+import * as s from "@/server/db/schema";
+import { lookUpListing, retailDepsFor, saveOnlinePriceAsRule } from "@/server/services/retail-lookup";
+import { eq } from "drizzle-orm";
 import { run } from "./_run";
 
 function ruleFields(fd: FormData) {
@@ -113,4 +116,35 @@ export async function saveDefaultPercentAction(percentValue: number): Promise<Ac
     },
     `Your default is now ${percentValue}% of retail. Prices recalculated.`,
   );
+}
+
+// --- Online new prices -----------------------------------------------------------------
+
+/** "Look up new price" in the listing view (uses one of this month's lookups). */
+export async function lookUpListingAction(listingId: number): Promise<ActionResult> {
+  try {
+    const db = getDb();
+    const source = db.select({ source: s.listings.source }).from(s.listings).where(eq(s.listings.id, listingId)).get()?.source;
+    if (!source) return { ok: false, error: "Listing not found." };
+    const message = await lookUpListing(db, retailDepsFor(source), listingId);
+    refresh();
+    return { ok: true, message };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Lookup failed." };
+  }
+}
+
+/** Save an online price as your own price for that brand + category (+ material). */
+export async function saveOnlinePriceAction(lookupId: number): Promise<ActionResult> {
+  return run(() => saveOnlinePriceAsRule(getDb(), lookupId));
+}
+
+export async function updateOnlineLookupSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return run(() => {
+    const cap = int(fd, "monthlyLookupCap");
+    const perScan = int(fd, "lookupsPerScan");
+    if (cap === null) throw new ValidationError("Enter a monthly lookup cap (0–1,000).");
+    if (perScan === null) throw new ValidationError("Enter how many kinds of item to look up per scan.");
+    updatePricingSettings(getDb(), { onlineLookups: bool(fd, "onlineLookups"), monthlyLookupCap: cap, lookupsPerScan: perScan, blockedDomains: list(fd, "blockedDomains") });
+  }, "Online price settings saved.");
 }

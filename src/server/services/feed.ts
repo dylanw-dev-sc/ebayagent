@@ -4,6 +4,8 @@ import type { ListingFacts, Reason } from "../../lib/matching/engine";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
 import { loadPricingSettings, loadScanSettings } from "./context";
+import { productRefResolver } from "./retail-keys";
+import { lookupUsage, retailDepsFor } from "./retail-lookup";
 import { getPriceOverride } from "./pricing";
 
 export type FeedView = "matches" | "review" | "excluded" | "all" | "saved" | "dismissed";
@@ -305,9 +307,27 @@ export function getListingDetail(db: AppDb, id: number) {
     .map((r) => ({ profileId: r.m.profileId, name: r.name, state: r.m.state, summary: r.m.summary, reasons: r.m.reasons as Reason[] }));
   const staleMs = loadScanSettings(db).staleAfterHours * 3_600_000;
   const ruleSource = p?.ruleId ? db.select({ src: s.pricingRules.retailSource }).from(s.pricingRules).where(eq(s.pricingRules.id, p.ruleId)).get()?.src ?? null : null;
+  const pricingSettings = loadPricingSettings(db);
+  // The online lookup for this listing's kind of item: the one in use, or the latest attempt.
+  const kind = productRefResolver(db)(l.title, e);
+  const lookup =
+    (p?.retailLookupId ? db.select().from(s.retailLookups).where(eq(s.retailLookups.id, p.retailLookupId)).get() : undefined) ??
+    (kind ? db.select().from(s.retailLookups).where(eq(s.retailLookups.productKey, kind.productKey)).get() : undefined) ??
+    null;
+  const deps = retailDepsFor(l.source);
   return {
-    defaultPercent: loadPricingSettings(db).defaultAllowedBps / 100,
+    defaultPercent: pricingSettings.defaultAllowedBps / 100,
     ruleSource,
+    online: {
+      lookup,
+      query: kind?.query ?? null,
+      materialName: lookup?.materialKey ? db.select({ name: s.materials.name }).from(s.materials).where(eq(s.materials.key, lookup.materialKey)).get()?.name ?? lookup.materialKey : null,
+      canLookUp: kind !== null,
+      available: deps.provider !== null && pricingSettings.onlineLookups,
+      unavailableReason: !pricingSettings.onlineLookups ? "Online lookups are turned off (Cost Evaluator → Online new prices)." : deps.reason ?? null,
+      sample: deps.provider?.id === "fixture",
+      remaining: lookupUsage(db).remaining,
+    },
     listing: l,
     evaluation: e,
     facts: e.facts as ListingFacts,

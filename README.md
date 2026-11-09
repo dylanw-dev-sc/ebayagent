@@ -73,6 +73,27 @@ While eBay access isn't available, everything else works in fixture mode.
 
 Set `EBAY_ENVIRONMENT=sandbox` with sandbox keys to exercise the live code path against eBay's test data. Sandbox listings are not real listings.
 
+## Looking up new prices online (optional)
+
+The Cost Evaluator compares each listing with what that kind of item costs **new**. You can enter those prices yourself (grid or CSV), and the app can also look them up online with the official **Brave Search API**:
+
+1. Create a Brave Search API account at [brave.com/search/api](https://brave.com/search/api/) and choose the **Search** plan. It costs $5 per 1,000 searches and includes a **$5 credit every month** (about 1,000 searches). Brave asks for a card for anti-fraud reasons but doesn't charge it within the free credit.
+2. Create an API key in the Brave dashboard.
+3. Add it to `.env.local` (never commit it):
+   ```bash
+   BRAVE_SEARCH_API_KEY=your-key
+   ```
+4. Restart the app, then test one lookup:
+   ```bash
+   npm run retail:check -- "Brunello Cucinelli men's cashmere cardigan"
+   ```
+
+**Cost stays at $0:** searches are hard-capped at **1,000 per calendar month** (the free credit). You can lower the cap in *Cost Evaluator → Online new prices → Settings*, but not raise it past 1,000. Every search counts against the cap, including `retail:check` and the *Look up new price online* button, and lookups stop when it's reached until the 1st.
+
+**What is sent where:** the search contains only your own words — the brand's search name, "men's", the material name and the garment word (e.g. *Brunello Cucinelli men's cashmere cardigan*) — never the eBay listing's title or description. Store pages from the results are read with a plain identifying User-Agent, over HTTPS only, at most one request per store every few seconds, and only where the store's `robots.txt` allows it.
+
+Without a key, everything else works and online lookups stay off. In fixture mode, lookups use **sample stores** (`sample-store-a.example` …) with sample prices, labeled as such everywhere; no real store or Brave is contacted.
+
 ## How the app follows eBay's API rules
 
 | eBay rule (API License Agreement / Buy API docs) | What the app does |
@@ -111,6 +132,7 @@ Product images are shown directly from eBay's image CDN and are never copied or 
   - **Pricing rules** with a live max-price preview. A rule can be for one material only (e.g. Brunello Cucinelli **cashmere** sweaters vs the brand's general sweater price), and a blank % means "use my default".
   - **Brand × category grid** (*Rules → Brand × category grid*): one row per brand plus a category-wide row, with retail and allowed % per category. Blank % cells use your default %, which you can change at the top of the grid. A cleared cell removes that rule, and everything is recalculated once on save.
   - **CSV import/export:** download your rules, or a template with a row for every enabled brand × category, fill it in a spreadsheet, and import it. Rows with a blank retail price are skipped (never deleted or filled in), existing rules are updated, and problems are reported by line number. Brands can be written as their name or any alias, *All brands* means the category-wide rule, the optional `material` column (a material's name, e.g. *Cashmere*) makes a one-material rule, and a blank `allowed_percent` uses your default.
+  - **Online new prices** (see [Looking up new prices online](#looking-up-new-prices-online-optional)): when no price of yours covers a kind of item, scans look up its typical new price, shown as *Online price · N stores* with links to each store. One click saves it as your own price for that brand + category (+ material), or you can look it up again. The card shows this month's usage against your cap and the latest lookups.
   - **Seller's stated retail:** when a listing says "Retail $1,295", "MSRP", "RRP" or "originally $X", the listing view shows it as the seller's unverified claim, with *Use it for this listing* (a per-listing price). It's never used automatically.
 - **Saved Items:** everything you saved. Saved marks persist across sessions and rescans.
 - **Search Profiles:** create, edit, enable/disable, duplicate and delete. Every setting shows whether it is **Inherited** or an **Override**, with "Reset to default".
@@ -213,10 +235,12 @@ Colors are read from the title and the seller's *Color* item specific (eBay ofte
   1. your price for that listing (set in the listing view, including a seller's stated retail you chose to use)
   2. your brand + category rule for the listing's main material (e.g. cashmere)
   3. your brand + category rule
-  4. your category + material rule
-  5. your category-wide rule
+  4. the typical new price found online for that kind of item (brand + category + garment word + main material), if looked up
+  5. your category + material rule
+  6. your category-wide rule
 
   The *main material* is the listing's largest stated fiber (e.g. 70% cashmere / 30% wool → cashmere); a rule for a material the listing doesn't contain never applies.
+- **Online prices:** one search per kind of item; up to eight results are considered, resale and marketplace sites are skipped (eBay, Grailed, Poshmark, The RealReal, Vestiaire, Depop, Mercari, ThredUp, Fashionphile, Etsy, Amazon… editable), and up to four store pages are read for their schema.org product price — the list price when the page marks one, otherwise the lowest current price, USD only. Each store counts once, prices more than 3× away from the middle are dropped, and the typical price is the **middle store price of at least two stores** (the lower middle when even). Found prices are kept 30 days; "not enough store prices" is retried after 14 days. Online prices use your default %.
 - **% of retail** = total with shipping ÷ the new price, rounded up so it's never understated. When shipping is unknown it covers the item price only and shows a "+" (e.g. *30%+*).
 - **Your default %** applies to every rule or per-listing price without its own %, so changing it re-prices all of those at once.
 - **Unknown shipping** is never assumed free. Such listings go to *Needs pricing review*, unless the item price alone already exceeds the ceiling.
@@ -294,6 +318,7 @@ You can also `POST /api/scan` on a running server.
 | `npm run lint` | Run ESLint |
 | `npm run scan` | Run one scan from the command line (same provider selection as the app) |
 | `npm run ebay:check` | Verify eBay credentials and Browse access |
+| `npm run retail:check -- "<query>"` | Test one online new-price lookup with your Brave key (counts against the monthly cap) |
 | `npm run db:setup` | Create, migrate and seed the database, and re-evaluate stored listings |
 | `npm run db:generate` | Generate a new SQL migration after changing `src/server/db/schema.ts` |
 
@@ -302,7 +327,8 @@ You can also `POST /api/scan` on a running server.
 ```
 src/lib/        Pure logic, no database or network: shared by app, CLI and tests
   matching/     brand · size · measurements · material · color · red flags · category/condition → engine (per-profile decisions)
-  pricing/      Cost Evaluator engine (integer cents, exact ceiling comparison)
+  pricing/      Cost Evaluator engine (integer cents, exact ceiling comparison, % of retail, seller-stated retail)
+  retail/       online new prices: query from your own words, page price extraction, store middle price, Brave + sample providers
   profiles/     inheritance resolver (defaults + overrides → effective settings with provenance)
   providers/    ListingProvider interface · ebay/ (OAuth, Browse, mapping, errors) · fixture/
 src/server/
@@ -335,19 +361,21 @@ Data acquisition (`providers/`) is kept separate from the business rules (`match
 - one-click corrections and the re-evaluation they trigger
 - "new since your last visit" sessions and previous/next across pages
 - the pricing grid and CSV import/export (quoting, formula-injection guard, per-line errors, round trip, one-material rules, blank % = your default)
+- online new prices: page price extraction (list vs sale, AggregateOffer, meta tags, other currencies), the middle price across stores and outliers, blocked stores, robots.txt, queries built only from your own words, the Brave client (key header, rejected key, rate limit), the monthly cap, caching, which kinds of item get looked up, and saving an online price as yours
 - new-price precedence with materials, % of retail (rounding, unknown shipping, exact agreement with the ceiling), your default %, seller-stated retail detection (and look-alikes it ignores), and upgrading a previous-version database
 - the Sweaters & Knitwear category, the default conditions, and one-time upgrades of existing databases (applied once, then your edits stick)
 - color reading (longest phrase, shades vs general colors, brand and label names ignored), color decisions, filter and sort
 
 Two optional browser tests drive the running app (each needs Playwright and its own scratch fixture database; see the file headers):
 - `e2e/smoke.mjs`: save, dismiss and review; pricing rules; brand and material edits; profile overrides; the detail drawer; and scanning.
-- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import, knitwear, color preferences, the measuring guide, the deals slider, your default % and seller-stated retail.
+- `e2e/features.mjs`: fit by measurements, red flags, one-click corrections, keyboard triage, the pricing grid and CSV import, knitwear, color preferences, the measuring guide, the deals slider, your default %, seller-stated retail and online new prices (sample stores).
 
 ## Known limitations
 
 - **Live eBay access is unverified here:** the provider is built to eBay's documented contract and tested against mocked responses, but has not yet made a real call. See [Is access guaranteed?](#is-access-guaranteed).
 - **Call volume:** with the seeded profile, one scan plans ~252 searches (36 brands × 7 eBay categories) plus detail calls. That fits several scans a day within 5,000 calls; scanning more often needs a higher limit (eBay's free Application Growth Check) or fewer brands/categories.
 - **Relisted items** count from their original listing date, so an old unsold item relisted this week is skipped.
+- **Online prices are for the kind of item, not the exact item:** e.g. *Brunello Cucinelli men's cashmere cardigan* covers that brand's cashmere cardigans in general. Stores that don't mark a list price may show a sale price; the middle of several stores and the conservative choices above limit that, and you can always save your own price instead. Some stores block automated reading, so fewer stores may count.
 - **Fabric in photos only** (e.g. a care-label shot) is not read automatically; such listings stay in *Needs review*. The same goes for measurements shown only in photos, and for colors: a listing that names no color is treated as color unknown.
 - **Red flags are phrases, not authentication.** They catch sellers who say what they're selling; they can't spot an undisclosed fake.
 - **Most live search results need item details** for size and fabric. Details beyond the per-scan limit (default 100) fall back to the title, so more listings land in *Needs review*.

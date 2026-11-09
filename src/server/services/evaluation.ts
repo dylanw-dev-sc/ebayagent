@@ -6,6 +6,7 @@ import { sizeKey } from "../../lib/matching/size";
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
 import { loadEngineContext, loadPricingSettings, type LoadedContext } from "./context";
+import { loadOnlinePrices, productRefResolver } from "./retail-keys";
 
 export type ListingRow = typeof s.listings.$inferSelect;
 
@@ -159,6 +160,8 @@ export function recomputePricing(db: AppDb, opts: { listingIds?: number[] } = {}
     materialName: (key: string | null) => (key === null ? null : materialNames.get(key) ?? key),
   };
   const options = { defaultAllowedBps: loadPricingSettings(db).defaultAllowedBps };
+  const kindOf = productRefResolver(db);
+  const online = loadOnlinePrices(db);
 
   const query = db
     .select({ l: s.listings, e: s.listingEvaluations })
@@ -171,6 +174,8 @@ export function recomputePricing(db: AppDb, opts: { listingIds?: number[] } = {}
         : []
       : query.all();
 
+  // undefined = never looked up; null = looked up, not enough store prices found.
+  const onlineFor = (key: string | undefined) => (key === undefined || !online.has(key) ? undefined : online.get(key));
   const now = new Date();
   db.transaction((tx) => {
     for (const { l, e } of rows) {
@@ -189,6 +194,7 @@ export function recomputePricing(db: AppDb, opts: { listingIds?: number[] } = {}
           brandId: e?.brandId ?? null,
           categoryId: e?.categoryId ?? null,
           materialKeys: pricingMaterialKeys((e?.facts as ListingFacts | undefined)?.materialReading),
+          online: onlineFor(kindOf(l.title, e)?.productKey),
         },
         rules,
         override,

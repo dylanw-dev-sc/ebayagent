@@ -2,7 +2,7 @@
  * Optional browser test (not part of `npm test`) for fit by measurements,
  * counterfeit red flags, one-click corrections, keyboard triage, bulk
  * pricing setup (grid + CSV), the knitwear category, color preferences and
- * costing (% of retail, the deals slider, seller-stated retail).
+ * costing (% of retail, the deals slider, seller-stated retail, online new prices).
  *
  * It MODIFIES data, so run it against its own scratch fixture database
  * (not one already used by e2e/smoke.mjs):
@@ -167,6 +167,20 @@ const check = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAI
   const claimShown = await shows(costDlg, 'The seller says retail is');
   await costDlg.getByRole('button', { name: 'Use it for this listing' }).click();
   check("Seller's stated retail can be used for that listing with one click", claimShown && (await shows(costDlg, 'In use for this listing')) && (await shows(costDlg, 'Seller-stated retail (unverified)')));
+  await page.keyboard.press('Escape'); await settle();
+
+  // 11. Online new prices (fixture mode: sample stores, clearly labeled)
+  await page.goto(`${BASE}/cost`); await settle();
+  const onlineCard = page.locator('section', { has: page.locator('#online') });
+  const onlineText = (await onlineCard.innerText()) || '';
+  check('Scans looked up new prices (sample stores) within the monthly cap', /of 1,000 lookups/.test(onlineText) && /Sample online prices/.test(onlineText) && /\$[\d,]+\.\d\d · \d stores/.test(onlineText));
+  const onlineDeal = page.locator('section[aria-labelledby=deals-title] li', { hasText: 'Online price' }).first();
+  await page.getByLabel('Maximum % of retail').fill('80'); await page.waitForTimeout(250);
+  await onlineDeal.locator('a').nth(1).click(); await settle();
+  const odlg = page.getByRole('dialog');
+  const sourcesShown = await shows(odlg, 'sample-store-');
+  await odlg.getByRole('button', { name: /^Use \$/ }).click();
+  check('A listing shows its online stores, and the online price can be saved as yours', sourcesShown && (await shows(odlg, 'as your price')));
   await page.keyboard.press('Escape'); await settle();
 
   console.log(results.join('\n'));

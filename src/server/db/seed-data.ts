@@ -1,5 +1,6 @@
 import type { MaterialPriority, SizeSystem, UnknownMaterialPolicy } from "../../lib/domain/types";
 import { DEFAULT_RED_FLAG_PHRASES, type RedFlagPolicy } from "../../lib/matching/red-flags";
+import { DEFAULT_BLOCKED_DOMAINS } from "../../lib/retail/domains";
 
 /**
  * Initial clothing profile. These are SEED values only: they are inserted once
@@ -353,10 +354,25 @@ export const seedDefaults: DefaultsSetting = {
 export interface PricingSettings {
   /** Your default allowed share of retail (basis points): used by rules/overrides without their own % and by online prices. */
   defaultAllowedBps: number;
+  /** Look up typical new prices online during scans (needs a search key in live mode). */
+  onlineLookups: boolean;
+  /** Hard cap on search requests per calendar month (Brave's $5 monthly credit ≈ 1,000). */
+  monthlyLookupCap: number;
+  /** New kinds of item looked up per scan, at most. */
+  lookupsPerScan: number;
+  /** Stores whose prices don't count as "new at retail" (resale, marketplaces, aggregators). */
+  blockedDomains: string[];
 }
+
+/** Brave's free monthly credit covers about this many requests; the cap can be lowered, never raised past it. */
+export const MAX_MONTHLY_LOOKUPS = 1000;
 
 export const seedPricingSettings: PricingSettings = {
   defaultAllowedBps: 3300, // you chose 30–35% of retail
+  onlineLookups: true,
+  monthlyLookupCap: MAX_MONTHLY_LOOKUPS,
+  lookupsPerScan: 25,
+  blockedDomains: DEFAULT_BLOCKED_DOMAINS,
 };
 
 export interface ScanSettings {

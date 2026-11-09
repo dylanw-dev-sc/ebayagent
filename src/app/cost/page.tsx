@@ -3,16 +3,19 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { deleteRuleAction, toggleRuleAction } from "@/app/actions/pricing";
 import { DealsSlider } from "@/components/cost/deals-slider";
+import { OnlineLookupSettingsForm } from "@/components/cost/online-lookups";
 import { RuleForm } from "@/components/cost/rule-form";
 import { CsvImportForm, RuleGrid, type GridValue } from "@/components/cost/rule-grid";
 import { ExpandableRow } from "@/components/expandable-row";
 import { ActionButton, Toggle } from "@/components/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, TabLink, cn } from "@/components/ui";
-import { PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, shippingText } from "@/lib/format";
+import { PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, shippingText, timeAgo } from "@/lib/format";
 import { formatBps, formatMoney, minorToInput } from "@/lib/money";
 import { loadBrands, loadCategories, loadMaterials, loadPricingSettings } from "@/server/services/context";
 import { getDealsByPctOfRetail, getPricingList, type PricingFilter } from "@/server/services/feed";
+import { MAX_MONTHLY_LOOKUPS } from "@/server/db/seed-data";
 import { listPricingRules } from "@/server/services/pricing";
+import { lookupUsage, recentLookups, retailDepsFor } from "@/server/services/retail-lookup";
 import { getSystemStatus } from "@/server/services/status";
 import { requestDb } from "@/server/request";
 
@@ -57,7 +60,12 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
   const materials = loadMaterials(db)
     .filter((m) => m.kind === "fiber")
     .map((m) => ({ key: m.key, name: m.name }));
-  const defaultBps = loadPricingSettings(db).defaultAllowedBps;
+  const pricingSettings = loadPricingSettings(db);
+  const defaultBps = pricingSettings.defaultAllowedBps;
+  const usage = lookupUsage(db);
+  const retail = retailDepsFor(source);
+  const lookups = recentLookups(db, 8);
+  const monthLabel = new Date(`${usage.month}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const defaultPercent = defaultBps / 100;
   const deals = getDealsByPctOfRetail(db, source);
   const enabledCategoryIds = new Set(categoryRows.filter((c) => c.enabled).map((c) => c.id));
@@ -111,7 +119,7 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
             <>
               Where a listing&apos;s new price comes from, first match wins: <strong className="font-semibold text-ink">1.</strong> your price for that listing →{" "}
               <strong className="font-semibold text-ink">2.</strong> your brand + material rule (e.g. Brunello Cucinelli cashmere sweaters) → <strong className="font-semibold text-ink">3.</strong> your brand rule →{" "}
-              <strong className="font-semibold text-ink">4.</strong> a typical new price found online → <strong className="font-semibold text-ink">5.</strong> your category + material rule →{" "}
+              <strong className="font-semibold text-ink">4.</strong> a typical new price found online (below) → <strong className="font-semibold text-ink">5.</strong> your category + material rule →{" "}
               <strong className="font-semibold text-ink">6.</strong> your category-wide rule. The app never invents prices. Leave a % blank to use your default ({defaultPercent}%). Changes recalculate stored listings immediately, without a new scan.
             </>
           }
@@ -231,6 +239,73 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
           </div>
         </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <SectionTitle
+          id="online"
+          title="Online new prices"
+          description="When no price of yours covers a kind of item, scans look up its typical new price: one search per kind of item (brand, “men's”, material and garment words — never the eBay listing's text), a few store pages read for their listed price, and the middle price of at least two stores. Resale and marketplace sites never count, prices are USD only, and results are kept for 30 days. Your own prices always win."
+        />
+        <div className="card space-y-4 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Search service</p>
+              <p className="mt-1 text-sm font-medium text-ink">
+                {retail.provider ? retail.provider.label : "Not set up"}
+                {!pricingSettings.onlineLookups ? <span className="ml-2 text-ink-3">(turned off)</span> : null}
+              </p>
+              {retail.provider?.id === "fixture" ? (
+                <p className="mt-0.5 max-w-xl text-xs text-ink-3">Fixture mode: lookups use sample stores ending in “.example” with sample prices, never real stores.</p>
+              ) : null}
+            </div>
+            <div className="text-right">
+              <p className="eyebrow">This month ({monthLabel})</p>
+              <p className="mt-1 font-display text-2xl font-semibold tabular">
+                {usage.used.toLocaleString()} <span className="text-base font-normal text-ink-3">of {usage.cap.toLocaleString()} lookups</span>
+              </p>
+              <p className="text-xs text-ink-3 tabular">{usage.remaining.toLocaleString()} left · resets on the 1st</p>
+            </div>
+          </div>
+          {!retail.provider ? (
+            <ol className="list-decimal space-y-1 rounded-lg bg-canvas py-3 pr-4 pl-8 text-sm text-ink-2">
+              <li>
+                Create a Brave Search API account (<a className="underline underline-offset-2" href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer">brave.com/search/api</a>) and pick the
+                Search plan. Its $5 monthly credit covers about 1,000 searches; Brave asks for a card but doesn&apos;t charge it within the credit.
+              </li>
+              <li>Create an API key in the Brave dashboard.</li>
+              <li>
+                Add <code className="rounded bg-muted px-1">BRAVE_SEARCH_API_KEY=…</code> to <code className="rounded bg-muted px-1">.env.local</code> and restart the app. Test it with{" "}
+                <code className="rounded bg-muted px-1">npm run retail:check -- &quot;Brunello Cucinelli men&apos;s cashmere cardigan&quot;</code>.
+              </li>
+            </ol>
+          ) : null}
+          {lookups.length ? (
+            <ul className="divide-y divide-line rounded-xl border border-line text-sm">
+              {lookups.map((lk) => (
+                <li key={lk.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                  <span className="text-ink-2">“{lk.query}”</span>
+                  <span className={cn("tabular", lk.status === "found" ? "text-ink" : "text-ink-3")}>
+                    {lk.status === "found"
+                      ? `${formatMoney(lk.typicalMinor)} · ${lk.sourceCount} stores`
+                      : lk.status === "insufficient"
+                        ? "not enough store prices"
+                        : "lookup failed"}
+                    <span className="ml-2 text-xs text-ink-3">{timeAgo(lk.fetchedAt)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-3">No lookups yet. They happen during scans, or from a listing&apos;s Cost section.</p>
+          )}
+          <details className="rounded-lg border border-line px-4 py-3">
+            <summary className="cursor-pointer text-sm font-medium text-ink select-none">Settings</summary>
+            <div className="mt-3">
+              <OnlineLookupSettingsForm settings={pricingSettings} maxCap={MAX_MONTHLY_LOOKUPS} />
+            </div>
+          </details>
+        </div>
       </section>
 
       <section className="space-y-4">

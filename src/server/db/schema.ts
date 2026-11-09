@@ -11,6 +11,7 @@ import type {
   SizeSystem,
 } from "../../lib/domain/types";
 import type { MeasurementRanges } from "../../lib/matching/measurements";
+import type { RetailSourcePrice } from "../../lib/retail/types";
 import type { ProfileOverrides } from "../../lib/profiles/resolve";
 
 const createdAt = () =>
@@ -340,6 +341,43 @@ export const pricingDecisions = sqliteTable(
   },
   (t) => [index("pricing_decisions_status_idx").on(t.status), index("pricing_decisions_pct_idx").on(t.pctOfRetailBps)],
 );
+
+/** One online look-up of the typical new price for a kind of item (brand × category × garment × material). */
+export const retailLookups = sqliteTable(
+  "retail_lookups",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    productKey: text("product_key").notNull().unique(),
+    brandId: integer("brand_id")
+      .notNull()
+      .references(() => brands.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    garmentType: text("garment_type").notNull(),
+    materialKey: text("material_key"),
+    /** The search sent to the provider (built only from your own brand/garment/material words). */
+    query: text("query").notNull(),
+    provider: text("provider").notNull(),
+    status: text("status").$type<"found" | "insufficient" | "error">().notNull(),
+    typicalMinor: integer("typical_minor"),
+    minMinor: integer("min_minor"),
+    maxMinor: integer("max_minor"),
+    currency: text("currency").notNull().default("USD"),
+    sourceCount: integer("source_count").notNull().default(0),
+    sources: text("sources", { mode: "json" }).$type<RetailSourcePrice[]>().notNull().default(sql`'[]'`),
+    message: text("message"),
+    fetchedAt: integer("fetched_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("retail_lookups_brand_category_idx").on(t.brandId, t.categoryId)],
+);
+
+/** Search requests sent per calendar month (UTC), to enforce your monthly cap. */
+export const retailLookupUsage = sqliteTable("retail_lookup_usage", {
+  month: text("month").primaryKey(),
+  requests: integer("requests").notNull().default(0),
+});
 
 // --- Scanning -----------------------------------------------------------------------------
 

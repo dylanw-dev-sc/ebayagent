@@ -4,9 +4,10 @@ import { isFatalForScan, ProviderError, type ListingProvider } from "../../lib/p
 import type { AppDb } from "../db/client";
 import * as s from "../db/schema";
 import type { ScanErrorEntry } from "../db/schema";
-import { loadEngineContext, loadScanSettings } from "../services/context";
+import { loadEngineContext, loadPricingSettings, loadScanSettings } from "../services/context";
 import { recomputePricing, reevaluateListings, rowToListing } from "../services/evaluation";
 import { deleteListingByExternalId, deleteUnsavedListing, purgeExpiredListings, purgeOutsideWindow, upsertListing } from "../services/listings-write";
+import { retailDepsFor, runRetailLookups, type LookupRunSummary, type RetailDeps } from "../services/retail-lookup";
 import { planQueries } from "./plan";
 import { createProvider } from "./provider-factory";
 
@@ -22,6 +23,8 @@ export class ScanInProgressError extends Error {
 export type ScanStatus = (typeof s.scanRuns.$inferSelect)["status"];
 
 export interface ScanResult {
+  /** Online new-price lookups made during this scan (null when lookups are off). */
+  retailLookups: LookupRunSummary | null;
   runId: number;
   status: ScanStatus;
   mode: "live" | "fixture";
@@ -50,6 +53,8 @@ export interface ScanResult {
 
 export interface ScanOptions {
   provider?: ListingProvider;
+  /** Online new-price lookups: default = sample stores for fixtures, Brave when its key is set; null = off. */
+  retail?: RetailDeps | null;
   trigger?: "manual" | "cli" | "schedule" | "test";
   now?: () => Date;
   /** Called after each page so callers can observe progress. */
@@ -143,6 +148,7 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     skippedOld: 0,
     skippedSeller: 0,
     refreshedSaved: 0,
+    retailLookups: null,
     errors: [],
     rateLimited: false,
   };
@@ -414,6 +420,15 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
     const evaluated = reevaluateListings(db, { listingIds: touchedIds, context: ctx });
     reevaluateListings(db, { onlyStale: true, context: ctx });
     recomputePricing(db, { listingIds: touchedIds });
+
+    // --- Typical new prices online for kinds of item no price of yours covers
+    //     (a few per scan, never past the monthly cap; re-prices listings when found).
+    const listingSource = provider.id === "fixture" ? "fixture" : "ebay";
+    const retailDeps = opts.retail === undefined ? retailDepsFor(listingSource) : opts.retail;
+    if (retailDeps?.provider && !fatal) {
+      r.retailLookups = await runRetailLookups(db, retailDeps, { source: listingSource, limit: loadPricingSettings(db).lookupsPerScan });
+    }
+
     for (const id of newIds) {
       const ev = evaluated.results.get(id);
       if (!ev) continue;
@@ -458,7 +473,15 @@ export async function runScan(db: AppDb, opts: ScanOptions = {}): Promise<ScanRe
         errors: r.errors.slice(-50),
         rateLimited: r.rateLimited,
         notes:
-          [budgetExhausted ? "Stopped at the daily call budget." : null, r.refreshedSaved ? `Refreshed ${r.refreshedSaved} saved listing(s).` : null].filter(Boolean).join(" ") || null,
+          [
+            budgetExhausted ? "Stopped at the daily call budget." : null,
+            r.refreshedSaved ? `Refreshed ${r.refreshedSaved} saved listing(s).` : null,
+            r.retailLookups?.looked ? `Looked up new prices for ${r.retailLookups.looked} kind(s) of item (${r.retailLookups.found} found).` : null,
+            r.retailLookups?.capReached ? "Monthly lookup cap reached; lookups resume on the 1st." : null,
+            r.retailLookups?.stopped ? `Online lookups stopped: ${r.retailLookups.stopped}` : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
       })
       .where(eq(s.scanRuns.id, run.id))
       .run();

@@ -16,7 +16,8 @@ import { brandId, categoryId, memoryDb } from "./helpers";
 // Fixture timestamps are relative to "now" so the rolling listing-age window never makes these tests date-dependent.
 const NOW = new Date();
 const fixture = (batch: number, extra: ConstructorParameters<typeof FixtureProvider>[0] = {}) => new FixtureProvider({ batch, now: NOW, ...extra });
-const scan = (db: AppDb, provider: ListingProvider) => runScan(db, { provider, trigger: "test" });
+// These tests cover rules and scanning; online new-price lookups are tested in tests/retail-lookup.test.ts.
+const scan = (db: AppDb, provider: ListingProvider) => runScan(db, { provider, trigger: "test", retail: null });
 
 function listingByExt(db: AppDb, externalId: string) {
   return db.select().from(s.listings).where(and(eq(s.listings.source, "fixture"), eq(s.listings.externalId, externalId))).get();

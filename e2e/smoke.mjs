@@ -62,10 +62,11 @@ const tabCount = async (page, label) => {
   await page.goto(`${BASE}/finder?rev=reviewed`); await settle();
   check('Reviewed filter shows the reviewed item', (await page.locator('article').count()) === 1 && (await page.locator('article').first().textContent()).includes(thirdTitle.slice(0, 20)), thirdTitle);
 
-  // 5. Add a category-wide pricing rule → recalculated without scan
+  // 5. Add a brand pricing rule → recalculated without scan (your brand prices beat online prices)
   await page.goto(`${BASE}/cost`); await settle();
   const addForm = page.locator('form', { has: page.getByRole('button', { name: 'Add rule' }) });
   await addForm.locator('select[name=categoryId]').selectOption({ label: 'Shirts' });
+  await addForm.locator('select[name=brandId]').selectOption({ label: 'Norse Projects' });
   await addForm.locator('input[name=retail]').fill('100');
   await addForm.locator('input[name=percent]').fill('50');
   const preview = await addForm.textContent();

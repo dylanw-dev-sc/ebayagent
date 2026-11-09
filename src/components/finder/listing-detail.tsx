@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, ExternalLink, Info, CircleX } from "lucide-react";
-import { clearPriceOverrideAction, setPriceOverrideAction, useSellerRetailAction } from "@/app/actions/listings";
+import { clearPriceOverrideAction, setPriceOverrideAction, applySellerRetailAction } from "@/app/actions/listings";
+import { lookUpListingAction, saveOnlinePriceAction } from "@/app/actions/pricing";
 import { MATERIAL_LEVEL_LABEL, PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, formatDateTime, shippingText, timeAgo } from "@/lib/format";
 import type { ListingFacts, Reason } from "@/lib/matching/engine";
 import { formatBps, formatMoney, minorToInput } from "@/lib/money";
@@ -230,7 +231,13 @@ export function ListingDetail({
             </KeyValue>
             <KeyValue label="Max secondhand">{formatMoney(p.maxPriceMinor, currency)}</KeyValue>
             <KeyValue label="Retail source">
-              <span className="text-sm">{p.ruleLevel === "override" ? d.override?.retailSource ?? "—" : d.ruleSource ?? "—"}</span>
+              <span className="text-sm">
+                {p.ruleLevel === "override"
+                  ? d.override?.retailSource ?? "—"
+                  : p.ruleLevel === "online"
+                    ? `Online · ${d.online.lookup?.sourceCount ?? "?"} stores${d.online.lookup?.provider === "fixture" ? " (sample)" : ""}`
+                    : d.ruleSource ?? "—"}
+              </span>
             </KeyValue>
           </dl>
         ) : null}
@@ -243,12 +250,13 @@ export function ListingDetail({
             {p.ruleLevel === "override" && d.override?.referenceRetailMinor === p.sellerRetailMinor ? (
               <span className="text-xs text-ink-3">In use for this listing</span>
             ) : (
-              <ActionButton action={useSellerRetailAction.bind(null, l.id)} variant="secondary">
+              <ActionButton action={applySellerRetailAction.bind(null, l.id)} variant="secondary">
                 Use it for this listing
               </ActionButton>
             )}
           </div>
         ) : null}
+        <OnlinePrice online={d.online} listingId={l.id} brandName={d.brandName} categoryName={d.categoryName} inUse={p?.ruleLevel === "online"} />
         <p className="mt-3 text-xs text-ink-3">Price eligibility only checks your ceiling — it is not a bargain or market-value rating.</p>
 
         <div className="mt-5 rounded-lg border border-line bg-canvas p-4">
@@ -325,4 +333,91 @@ function colorNote(c: ListingFacts["color"]): string {
   if (c.source === "item_specifics") return `From item specifics (${aspect})`;
   const words = (c.titleWords ?? []).map((w) => `“${w}”`).join(", ");
   return c.source === "both" ? `From the title (${words}) and item specifics (${aspect})` : `From the title (${words})`;
+}
+
+/** The typical new price found online for this kind of item: sources, and what you can do with it. */
+function OnlinePrice({
+  online,
+  listingId,
+  brandName,
+  categoryName,
+  inUse,
+}: {
+  online: Detail["online"];
+  listingId: number;
+  brandName: string | null;
+  categoryName: string | null;
+  inUse: boolean;
+}) {
+  const lk = online.lookup;
+  const scope = [brandName, categoryName, online.materialName?.toLowerCase()].filter(Boolean).join(" · ");
+  const again = online.available ? (
+    <ActionButton action={lookUpListingAction.bind(null, listingId)} variant="ghost">
+      Look up again
+    </ActionButton>
+  ) : null;
+  return (
+    <div className="mt-4 rounded-lg border border-line bg-canvas p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-sm font-semibold text-ink">Typical new price online</p>
+        {lk ? (
+          <p className="text-xs text-ink-3">
+            Searched “{lk.query}” {timeAgo(lk.fetchedAt)}
+            {lk.provider === "fixture" ? " · sample stores (fixture data)" : ""}
+          </p>
+        ) : null}
+      </div>
+      {lk?.status === "found" ? (
+        <>
+          <p className="mt-1 text-sm leading-6 text-ink-2">
+            <strong className="font-semibold text-ink tabular">{formatMoney(lk.typicalMinor)}</strong> — the middle price of {lk.sourceCount} stores (from{" "}
+            {formatMoney(lk.minMinor)} to {formatMoney(lk.maxMinor)}). {inUse ? "Used for this listing's % of retail." : "Not used here: a price of yours applies."}
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {lk.sources.map((src) => (
+              <li key={src.url} className="flex justify-between gap-3">
+                <a href={src.url} target="_blank" rel="noopener noreferrer nofollow" className="truncate text-ink-2 underline-offset-2 hover:text-ink hover:underline">
+                  {src.domain}
+                  {src.sample ? " (sample)" : ""}
+                </a>
+                <span className="shrink-0 text-ink-2 tabular">
+                  {formatMoney(src.priceMinor)}
+                  {src.kind === "list" ? " list price" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex flex-wrap items-start gap-2">
+            <ActionButton action={saveOnlinePriceAction.bind(null, lk.id)} variant="secondary">
+              Use {formatMoney(lk.typicalMinor)} as my price for {scope}
+            </ActionButton>
+            {again}
+          </div>
+        </>
+      ) : lk ? (
+        <>
+          <p className="mt-1 text-sm text-ink-2">
+            {lk.status === "error" ? "The lookup failed: " : ""}
+            {lk.message ?? "No usable store prices were found."}
+          </p>
+          <div className="mt-3">{again}</div>
+        </>
+      ) : !online.canLookUp ? (
+        <p className="mt-1 text-sm text-ink-3">The brand and category must be known before the new price can be looked up.</p>
+      ) : online.available ? (
+        <>
+          <p className="mt-1 text-sm text-ink-2">
+            Not looked up yet. A lookup searches for “{online.query}” and reads a few stores&apos; prices ({online.remaining.toLocaleString()} lookups left this month).
+          </p>
+          <div className="mt-3">
+            <ActionButton action={lookUpListingAction.bind(null, listingId)} variant="secondary">
+              Look up new price online
+            </ActionButton>
+          </div>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-ink-3">{online.unavailableReason}</p>
+      )}
+    </div>
+  );
 }

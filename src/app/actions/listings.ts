@@ -43,7 +43,7 @@ export async function setPriceOverrideAction(_prev: ActionResult | null, fd: For
 }
 
 /** Use the retail price the seller states in the listing, for this listing only (an unverified claim). */
-export async function useSellerRetailAction(listingId: number): Promise<ActionResult> {
+export async function applySellerRetailAction(listingId: number): Promise<ActionResult> {
   return run(() => {
     const db = getDb();
     const { source, externalId } = listingKey(listingId);

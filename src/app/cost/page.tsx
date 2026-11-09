@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { deleteRuleAction, toggleRuleAction } from "@/app/actions/pricing";
 import { RuleForm } from "@/components/cost/rule-form";
+import { ExpandableRow } from "@/components/expandable-row";
 import { ActionButton, Toggle } from "@/components/forms";
 import { Badge, PageHeader, PageSkeleton, SectionTitle, TabLink, cn } from "@/components/ui";
 import { PRICING_LABEL, PRICING_TONE, STATE_LABEL, STATE_TONE, shippingText } from "@/lib/format";
@@ -106,46 +107,48 @@ async function CostContent({ searchParams }: { searchParams: PageProps<"/cost">[
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rules.map((r) => (
-                    <tr key={r.id} className={cn(!r.active && "opacity-55")}>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-ink">{r.categoryName}</p>
-                        <p className="text-xs text-ink-3">{r.brandName ?? "All brands — category-wide"}</p>
-                      </td>
-                      <td className="px-4 py-3 tabular">{formatMoney(r.referenceRetailMinor, r.currency)}</td>
-                      <td className="max-w-48 px-4 py-3 text-ink-2">{r.retailSource ?? <span className="text-ink-3">—</span>}</td>
-                      <td className="px-4 py-3 tabular">{formatBps(r.allowedBps)}</td>
-                      <td className="px-4 py-3 font-semibold tabular">{formatMoney(r.maxPriceMinor, r.currency)}</td>
-                      <td className="px-4 py-3">
-                        <Toggle checked={r.active} onChange={toggleRuleAction.bind(null, r.id)} label={`Rule active: ${r.categoryName} ${r.brandName ?? ""}`} size="sm" />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <details className="group relative inline-block text-left">
-                          <summary className="cursor-pointer list-none rounded-full px-3 py-1 text-xs font-medium text-ink-2 hover:bg-muted">Edit</summary>
-                          <div className="absolute right-0 z-20 mt-2 w-[min(90vw,760px)] rounded-xl border border-line bg-surface p-4 shadow-[var(--shadow-panel)]">
-                            <RuleForm
-                              mode="edit"
-                              categories={categories}
-                              brands={brands}
-                              initial={{
-                                id: r.id,
-                                categoryId: r.categoryId,
-                                brandId: r.brandId,
-                                retail: minorToInput(r.referenceRetailMinor),
-                                percent: formatBps(r.allowedBps).replace("%", ""),
-                                retailSource: r.retailSource,
-                                notes: r.notes,
-                                active: r.active,
-                              }}
-                            />
-                            <div className="mt-3 border-t border-line pt-3">
-                              <ActionButton action={deleteRuleAction.bind(null, r.id)} confirm="Delete this pricing rule? Listings will be recalculated." variant="danger" icon="trash">
-                                Delete rule
-                              </ActionButton>
-                            </div>
-                          </div>
-                        </details>
-                      </td>
-                    </tr>
+                    <ExpandableRow
+                      key={r.id}
+                      colSpan={7}
+                      className={cn(!r.active && "opacity-55")}
+                      cells={
+                        <>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-ink">{r.categoryName}</p>
+                            <p className="text-xs text-ink-3">{r.brandName ?? "All brands — category-wide"}</p>
+                          </td>
+                          <td className="px-4 py-3 tabular">{formatMoney(r.referenceRetailMinor, r.currency)}</td>
+                          <td className="max-w-48 px-4 py-3 text-ink-2">{r.retailSource ?? <span className="text-ink-3">—</span>}</td>
+                          <td className="px-4 py-3 tabular">{formatBps(r.allowedBps)}</td>
+                          <td className="px-4 py-3 font-semibold tabular">{formatMoney(r.maxPriceMinor, r.currency)}</td>
+                          <td className="px-4 py-3">
+                            <Toggle checked={r.active} onChange={toggleRuleAction.bind(null, r.id)} label={`Rule active: ${r.categoryName} ${r.brandName ?? ""}`} size="sm" />
+                          </td>
+                        </>
+                      }
+                      editor={
+                        <div className="space-y-3">
+                          <RuleForm
+                            mode="edit"
+                            categories={categories}
+                            brands={brands}
+                            initial={{
+                              id: r.id,
+                              categoryId: r.categoryId,
+                              brandId: r.brandId,
+                              retail: minorToInput(r.referenceRetailMinor),
+                              percent: formatBps(r.allowedBps).replace("%", ""),
+                              retailSource: r.retailSource,
+                              notes: r.notes,
+                              active: r.active,
+                            }}
+                          />
+                          <ActionButton action={deleteRuleAction.bind(null, r.id)} confirm="Delete this pricing rule? Listings will be recalculated." variant="danger" icon="trash">
+                            Delete rule
+                          </ActionButton>
+                        </div>
+                      }
+                    />
                   ))}
                 </tbody>
               </table>

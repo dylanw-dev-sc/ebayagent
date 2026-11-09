@@ -10,6 +10,7 @@ import {
   toggleCategoryAction,
   toggleConditionAction,
 } from "@/app/actions/preferences";
+import { ExpandableRow } from "@/components/expandable-row";
 import { ActionButton, SelectAction, Toggle } from "@/components/forms";
 import { BrandForm } from "@/components/preferences/brand-form";
 import { CategoryForm, ConditionCreateForm, DefaultsForm, GroupForm, MaterialCreateForm, MaterialEditForm, ScanSettingsForm } from "@/components/preferences/forms";
@@ -97,36 +98,38 @@ async function PreferencesContent() {
               </thead>
               <tbody className="divide-y divide-line">
                 {brands.map((b) => (
-                  <tr key={b.id} className={cn("align-top", !b.enabled && "bg-canvas/60 text-ink-3")}>
-                    <td className="px-4 py-3">
-                      <p className={cn("font-medium", b.enabled ? "text-ink" : "text-ink-3")}>{b.name}</p>
-                      {b.notes ? <p className="mt-0.5 max-w-72 text-xs leading-4 text-ink-3">{b.notes}</p> : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex max-w-60 flex-wrap gap-1">
-                        {b.groupIds.length ? b.groupIds.map((g) => <Badge key={g}>{groupName.get(g)}</Badge>) : <span className="text-xs text-ink-3">No group</span>}
-                      </div>
-                    </td>
-                    <td className="max-w-56 px-4 py-3 text-ink-2">{b.aliases.length ? b.aliases.join(", ") : <span className="text-ink-3">—</span>}</td>
-                    <td className="max-w-48 px-4 py-3 text-ink-2">{b.excludePhrases.length ? b.excludePhrases.join(", ") : <span className="text-ink-3">—</span>}</td>
-                    <td className="px-4 py-3 text-ink-2">{b.searchQuery}</td>
-                    <td className="px-4 py-3">
-                      <Toggle checked={b.enabled} onChange={toggleBrandAction.bind(null, b.id)} label={`${b.name} enabled`} size="sm" />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <details className="relative inline-block text-left">
-                        <summary className="cursor-pointer list-none rounded-full px-3 py-1 text-xs font-medium text-ink-2 hover:bg-muted">Edit</summary>
-                        <div className="absolute right-0 z-20 mt-2 w-[min(90vw,620px)] rounded-xl border border-line bg-surface p-4 shadow-[var(--shadow-panel)]">
-                          <BrandForm groups={groupOptions} initial={{ id: b.id, name: b.name, searchQuery: b.searchQuery, aliases: b.aliases, excludePhrases: b.excludePhrases, groupIds: b.groupIds, notes: b.notes }} />
-                          <div className="mt-3 border-t border-line pt-3">
-                            <ActionButton action={deleteBrandAction.bind(null, b.id)} confirm={`Delete ${b.name}? Its pricing rules are removed too. (Disable it instead to keep it.)`} variant="danger" icon="trash">
-                              Delete brand
-                            </ActionButton>
+                  <ExpandableRow
+                    key={b.id}
+                    colSpan={7}
+                    className={cn(!b.enabled && "bg-canvas/60 text-ink-3")}
+                    cells={
+                      <>
+                        <td className="px-4 py-3">
+                          <p className={cn("font-medium", b.enabled ? "text-ink" : "text-ink-3")}>{b.name}</p>
+                          {b.notes ? <p className="mt-0.5 max-w-72 text-xs leading-4 text-ink-3">{b.notes}</p> : null}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex max-w-60 flex-wrap gap-1">
+                            {b.groupIds.length ? b.groupIds.map((g) => <Badge key={g}>{groupName.get(g)}</Badge>) : <span className="text-xs text-ink-3">No group</span>}
                           </div>
-                        </div>
-                      </details>
-                    </td>
-                  </tr>
+                        </td>
+                        <td className="max-w-56 px-4 py-3 text-ink-2">{b.aliases.length ? b.aliases.join(", ") : <span className="text-ink-3">—</span>}</td>
+                        <td className="max-w-48 px-4 py-3 text-ink-2">{b.excludePhrases.length ? b.excludePhrases.join(", ") : <span className="text-ink-3">—</span>}</td>
+                        <td className="px-4 py-3 text-ink-2">{b.searchQuery}</td>
+                        <td className="px-4 py-3">
+                          <Toggle checked={b.enabled} onChange={toggleBrandAction.bind(null, b.id)} label={`${b.name} enabled`} size="sm" />
+                        </td>
+                      </>
+                    }
+                    editor={
+                      <div className="max-w-3xl space-y-3">
+                        <BrandForm groups={groupOptions} initial={{ id: b.id, name: b.name, searchQuery: b.searchQuery, aliases: b.aliases, excludePhrases: b.excludePhrases, groupIds: b.groupIds, notes: b.notes }} />
+                        <ActionButton action={deleteBrandAction.bind(null, b.id)} confirm={`Delete ${b.name}? Its pricing rules are removed too. (Disable it instead to keep it.)`} variant="danger" icon="trash">
+                          Delete brand
+                        </ActionButton>
+                      </div>
+                    }
+                  />
                 ))}
               </tbody>
             </table>
@@ -239,30 +242,31 @@ async function PreferencesContent() {
               </thead>
               <tbody className="divide-y divide-line">
                 {materials.map((m) => (
-                  <tr key={m.id} className="align-top">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-ink">{m.name}</p>
-                      {m.notes ? <p className="mt-0.5 max-w-80 text-xs leading-4 text-ink-3">{m.notes}</p> : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      <SelectAction value={m.priority} options={PRIORITY_OPTIONS} onChange={setMaterialPriorityAction.bind(null, m.id)} label={`${m.name} priority`} />
-                    </td>
-                    <td className="max-w-72 px-4 py-3 text-xs leading-5 text-ink-2">{m.kind === "blend" ? `Blend of ${m.components.join(" + ")}` : m.keywords.join(", ")}</td>
-                    <td className="px-4 py-3 text-xs text-ink-2">{m.priority === "avoid" || m.priority === "exclude" ? (m.heavyThresholdPct ? `≥ ${m.heavyThresholdPct}%` : "any amount") : "—"}</td>
-                    <td className="px-4 py-3 text-right">
-                      <details className="relative inline-block text-left">
-                        <summary className="cursor-pointer list-none rounded-full px-3 py-1 text-xs font-medium text-ink-2 hover:bg-muted">Edit</summary>
-                        <div className="absolute right-0 z-20 mt-2 w-[min(90vw,620px)] rounded-xl border border-line bg-surface p-4 shadow-[var(--shadow-panel)]">
-                          <MaterialEditForm m={{ id: m.id, name: m.name, kind: m.kind, keywords: m.keywords, components: m.components, heavyThresholdPct: m.heavyThresholdPct }} />
-                          <div className="mt-3 border-t border-line pt-3">
-                            <ActionButton action={deleteMaterialAction.bind(null, m.id)} confirm={`Delete ${m.name}?`} variant="danger" icon="trash">
-                              Delete material
-                            </ActionButton>
-                          </div>
-                        </div>
-                      </details>
-                    </td>
-                  </tr>
+                  <ExpandableRow
+                    key={m.id}
+                    colSpan={5}
+                    cells={
+                      <>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-ink">{m.name}</p>
+                          {m.notes ? <p className="mt-0.5 max-w-80 text-xs leading-4 text-ink-3">{m.notes}</p> : null}
+                        </td>
+                        <td className="px-4 py-3">
+                          <SelectAction value={m.priority} options={PRIORITY_OPTIONS} onChange={setMaterialPriorityAction.bind(null, m.id)} label={`${m.name} priority`} />
+                        </td>
+                        <td className="max-w-72 px-4 py-3 text-xs leading-5 text-ink-2">{m.kind === "blend" ? `Blend of ${m.components.join(" + ")}` : m.keywords.join(", ")}</td>
+                        <td className="px-4 py-3 text-xs text-ink-2">{m.priority === "avoid" || m.priority === "exclude" ? (m.heavyThresholdPct ? `≥ ${m.heavyThresholdPct}%` : "any amount") : "—"}</td>
+                      </>
+                    }
+                    editor={
+                      <div className="max-w-3xl space-y-3">
+                        <MaterialEditForm m={{ id: m.id, name: m.name, kind: m.kind, keywords: m.keywords, components: m.components, heavyThresholdPct: m.heavyThresholdPct }} />
+                        <ActionButton action={deleteMaterialAction.bind(null, m.id)} confirm={`Delete ${m.name}?`} variant="danger" icon="trash">
+                          Delete material
+                        </ActionButton>
+                      </div>
+                    }
+                  />
                 ))}
               </tbody>
             </table>

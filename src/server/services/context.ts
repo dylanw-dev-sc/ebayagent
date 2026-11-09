@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type {
   BrandConfig,
   BrandGroupConfig,
@@ -21,7 +21,7 @@ export function loadGroups(db: AppDb): Array<BrandGroupConfig & { description: s
 }
 
 export function loadBrands(db: AppDb): Array<BrandConfig & { notes: string | null }> {
-  const rows = db.select().from(s.brands).orderBy(asc(s.brands.name)).all();
+  const rows = db.select().from(s.brands).orderBy(sql`${s.brands.name} collate nocase`).all();
   const aliases = db.select().from(s.brandAliases).orderBy(asc(s.brandAliases.alias)).all();
   const members = db.select().from(s.brandGroupMembers).all();
   return rows.map((b) => ({

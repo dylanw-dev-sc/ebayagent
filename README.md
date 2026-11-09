@@ -227,6 +227,8 @@ Data acquisition (`providers/`) is kept separate from the business rules (`match
 - eBay errors (auth, access denied, rate limits, 5xx) via mocked HTTP; empty results; interrupted scans; the call budget
 - restart persistence and idempotent seeding
 
+`e2e/smoke.mjs` is an optional browser smoke test of the main UI workflows: save, dismiss and review; pricing rules; brand and material edits; profile overrides; the detail drawer; and scanning. It needs Playwright and a scratch fixture database; see the file header.
+
 ## Known limitations
 
 - **Live eBay access is unverified here:** the provider is built to eBay's documented contract and tested against mocked responses, but has not yet made a real call. See [Is access guaranteed?](#is-access-guaranteed).

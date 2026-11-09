@@ -48,9 +48,9 @@ export function SaveButton({ listingId, initial }: { listingId: number; initial:
 
 export function CardActions({ listingId, initial, itemUrl, isFixture }: { listingId: number; initial: State; itemUrl: string | null; isFixture: boolean }) {
   const { state, update } = useListingState(listingId, initial);
-  const link = "inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-medium transition";
+  const link = "inline-flex h-7 items-center gap-1 rounded-full px-1.5 text-[12px] font-medium transition whitespace-nowrap";
   return (
-    <div className="flex flex-wrap items-center gap-1 pt-1">
+    <div className="flex flex-wrap items-center gap-0.5 pt-1">
       <button
         type="button"
         onClick={() => update({ dismissed: !state.dismissed })}
@@ -76,7 +76,7 @@ export function CardActions({ listingId, initial, itemUrl, isFixture }: { listin
         </a>
       ) : (
         <span className={cn(link, "ml-auto cursor-default text-ink-3")} title={isFixture ? "Fixture items are synthetic and have no eBay page" : "No eBay URL provided"}>
-          {isFixture ? "No eBay page" : "No link"}
+          No link
         </span>
       )}
     </div>
